@@ -1,18 +1,18 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
-import { MainLayout } from './components/layout/MainLayout';
+import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
+import { ThemeProvider } from './contexts/ThemeContext.jsx';
+import { MainLayout } from './components/layout/MainLayout.jsx';
 import { Toaster } from './components/ui/sonner';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
-import AssistantPage from './pages/AssistantPage';
-import ReconPage from './pages/ReconPage';
-import VulnerabilitiesPage from './pages/VulnerabilitiesPage';
-import NetworkPage from './pages/NetworkPage';
-import TerminalPage from './pages/TerminalPage';
-import ReportsPage from './pages/ReportsPage';
-import SettingsPage from './pages/SettingsPage';
+import LoginPage from './pages/LoginPage.jsx';
+import RegisterPage from './pages/RegisterPage.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
+import AssistantPage from './pages/AssistantPage.jsx';
+import ReconPage from './pages/ReconPage.jsx';
+import VulnerabilitiesPage from './pages/VulnerabilitiesPage.jsx';
+import NetworkPage from './pages/NetworkPage.jsx';
+import TerminalPage from './pages/TerminalPage.jsx';
+import ReportsPage from './pages/ReportsPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 import './App.css';
 
 function ProtectedRoute({ children }) {
