@@ -1,16 +1,31 @@
-import { useTheme } from '../../contexts/ThemeContext.jsx';
 import { Button } from '../ui/button';
 import { Sun, Moon, Bell, Search } from 'lucide-react';
 import { Input } from '../ui/input';
+import { useState, useEffect } from 'react';
 
 export function Header({ title, subtitle }) {
-    const { theme, toggleTheme } = useTheme();
+    const [theme, setTheme] = useState('dark');
+
+    useEffect(() => {
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        setTheme(savedTheme);
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(savedTheme);
+    }, []);
+
+    const toggleTheme = () => {
+        const newTheme = theme === 'dark' ? 'light' : 'dark';
+        setTheme(newTheme);
+        localStorage.setItem('theme', newTheme);
+        document.documentElement.classList.remove('light', 'dark');
+        document.documentElement.classList.add(newTheme);
+    };
 
     return (
-        <header className="glass-header px-6 py-4 flex items-center justify-between" data-testid="header">
+        <header className="bg-background/80 backdrop-blur-md border-b border-border/40 sticky top-0 z-50 px-6 py-4 flex items-center justify-between" data-testid="header">
             <div>
                 <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-                {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+                {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
             </div>
 
             <div className="flex items-center gap-4">
@@ -39,11 +54,7 @@ export function Header({ title, subtitle }) {
                     onClick={toggleTheme}
                     data-testid="theme-toggle"
                 >
-                    {theme === 'dark' ? (
-                        <Sun className="w-5 h-5" />
-                    ) : (
-                        <Moon className="w-5 h-5" />
-                    )}
+                    {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </Button>
             </div>
         </header>
