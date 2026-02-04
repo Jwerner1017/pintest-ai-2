@@ -1,4 +1,4 @@
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '../../contexts/ThemeContext.jsx';
 import { Button } from '../ui/button';
 import { Sun, Moon, Bell, Search } from 'lucide-react';
 import { Input } from '../ui/input';
