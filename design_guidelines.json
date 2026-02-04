@@ -1,0 +1,145 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Creative Designer",
+    "mission": "Create a superior AI-enhanced penetration testing platform.",
+    "tone": "Professional, High-Tech, Trustworthy, Efficient, 'Hacker Aesthetic' (Non-cliché)",
+    "principles": [
+      "Fusion over Imitation: Mix Cyberpunk aesthetics with Swiss Grid precision.",
+      "Emotion First: Evoke a sense of control and power.",
+      "Content is King: Data density without clutter.",
+      "Zoom In: Focus on critical alerts and metrics.",
+      "Negative Space: Use black space to frame data.",
+      "Contrast: High contrast for alerts (Red/Orange) against deep black."
+    ]
+  },
+  "design_system": {
+    "theme_strategy": "Dark Mode Default (The Performance Pro Archetype)",
+    "colors": {
+      "base": {
+        "background": "#0A0A0A",
+        "surface": "#121212",
+        "surface_highlight": "#1A1A1A",
+        "border": "#27272A"
+      },
+      "text": {
+        "primary": "#FFFFFF",
+        "secondary": "#A1A1AA",
+        "muted": "#52525B"
+      },
+      "accents": {
+        "primary": "#FF3B30",
+        "secondary": "#007AFF",
+        "success": "#10B981",
+        "warning": "#F59E0B",
+        "danger": "#EF4444",
+        "info": "#3B82F6"
+      },
+      "chart_palette": [
+        "#FF3B30",
+        "#007AFF",
+        "#10B981",
+        "#F59E0B",
+        "#8B5CF6"
+      ]
+    },
+    "typography": {
+      "headings": {
+        "font_family": "Outfit, sans-serif",
+        "weights": ["600", "700"],
+        "tracking": "-0.02em"
+      },
+      "body": {
+        "font_family": "Inter, sans-serif",
+        "weights": ["400", "500"],
+        "tracking": "0"
+      },
+      "code": {
+        "font_family": "JetBrains Mono, monospace",
+        "weights": ["400", "500"]
+      }
+    },
+    "spacing": {
+      "scale": "Tailwind Default",
+      "strategy": "Generous padding (p-6, p-8) for containers, tight gaps (gap-2, gap-4) for data grids."
+    },
+    "radius": {
+      "default": "0px",
+      "buttons": "2px",
+      "inputs": "0px"
+    },
+    "shadows": {
+      "card": "0 1px 0 0 rgba(255, 255, 255, 0.1)",
+      "glow": "0 0 20px rgba(255, 59, 48, 0.15)"
+    }
+  },
+  "layout_strategies": {
+    "dashboard_grid": {
+      "type": "Bento Grid (High Density)",
+      "columns": "grid-cols-1 md:grid-cols-4 lg:grid-cols-12",
+      "gap": "gap-4",
+      "modules": {
+        "sidebar": "col-span-2 hidden lg:block h-screen sticky top-0 border-r border-border/40",
+        "main_content": "col-span-12 lg:col-span-10 p-6 space-y-6",
+        "hero_metric": "col-span-12 md:col-span-4 lg:col-span-3 h-32",
+        "main_chart": "col-span-12 md:col-span-8 lg:col-span-9 h-96",
+        "feed_panel": "col-span-12 md:col-span-4 lg:col-span-3 h-96",
+        "terminal_widget": "col-span-12 h-64 bg-black border-t border-border/40"
+      }
+    },
+    "surface_styles": {
+      "default_card": "bg-card/50 border border-border/40 backdrop-blur-sm",
+      "terminal": "bg-[#050505] border border-border/20 font-mono text-sm text-green-500 p-4 relative overflow-hidden",
+      "glass_header": "bg-background/80 backdrop-blur-md border-b border-border/40 sticky top-0 z-50"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-primary text-primary-foreground hover:bg-primary/90 rounded-sm font-medium px-4 py-2 transition-all",
+      "destructive": "bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-sm",
+      "outline": "border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-sm"
+    },
+    "inputs": {
+      "default": "bg-background border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring rounded-none"
+    },
+    "cards": {
+      "metric": "p-6 flex flex-col justify-between border-l-2 border-l-primary/50 bg-card/20 hover:bg-card/40 transition-colors",
+      "chart": "p-6 border border-border/40 bg-card/20"
+    },
+    "navigation": {
+      "sidebar_item": "flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm hover:bg-accent hover:text-accent-foreground transition-colors",
+      "active_item": "bg-accent text-accent-foreground"
+    }
+  },
+  "visual_enhancers": {
+    "grid_lines": "Use 'bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]' for backgrounds.",
+    "scanlines": "Overlay 'pointer-events-none fixed inset-0 z-50 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%] bg-repeat' for terminal sections.",
+    "glow_effects": "Use subtle drop-shadows on active elements: 'drop-shadow-[0_0_8px_rgba(255,59,48,0.5)]' for alerts."
+  },
+  "assets": {
+    "icons": "Lucide React (default)",
+    "images": {
+      "login_bg": "https://images.unsplash.com/photo-1759661881353-5b9cc55e1cf4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwzfHxjeWJlcnNlY3VyaXR5JTIwc2VydmVyJTIwcm9vbSUyMGFic3RyYWN0JTIwZGFya3xlbnwwfHx8fDE3NzAyMzA2MjN8MA&ixlib=rb-4.1.0&q=85",
+      "placeholder_avatar": "https://github.com/shadcn.png"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Implement the 'Bento Grid' layout for the main dashboard.",
+    "Use the 'Grid Borders' surface strategy for all cards (1px border, no shadow, sharp corners).",
+    "Ensure the 'Terminal' component has the 'Retro-Futurism' look (dark bg, monospace, scanlines).",
+    "Use 'Outfit' font for headings and 'JetBrains Mono' for all code/terminal text.",
+    "Prioritize the Dark Mode theme. Light mode should be functional but secondary.",
+    "Use 'Recharts' for all data visualization (Vulnerability scans, Network traffic).",
+    "Add 'data-testid' to all interactive elements.",
+    "Do NOT use gradients for backgrounds. Use solid colors or the 'Grid Lines' pattern.",
+    "Keep animations minimal and fast (0.2s ease-out)."
+  ],
+  "universal_guidelines": [
+    "Avoid 'AI slop' aesthetics (generic centered layouts, gradients).",
+    "Create depth through z-index and subtle borders, not heavy shadows.",
+    "Use 2-3x more spacing than typical designs.",
+    "Never use AI assistant emojis.",
+    "Use 'sonner' for toasts.",
+    "Export components as named exports, pages as default exports."
+  ]
+}
