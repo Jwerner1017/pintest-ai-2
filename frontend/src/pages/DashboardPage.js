@@ -11,22 +11,59 @@ import {
     Target,
     Clock
 } from 'lucide-react';
-import { 
-    LineChart, 
-    Line, 
-    XAxis, 
-    YAxis, 
-    CartesianGrid, 
-    Tooltip, 
-    ResponsiveContainer,
-    BarChart,
-    Bar,
-    Legend
-} from 'recharts';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+// Simple chart component to avoid recharts issues
+function SimpleBarChart({ data }) {
+    const maxValue = Math.max(...data.map(d => d.count));
+    return (
+        <div className="space-y-3">
+            {data.map((item, i) => (
+                <div key={i} className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                        <span>{item.name}</span>
+                        <span className="font-medium">{item.count}</span>
+                    </div>
+                    <div className="h-2 bg-background/50 overflow-hidden">
+                        <div 
+                            className="h-full transition-all duration-500"
+                            style={{ 
+                                width: `${(item.count / maxValue) * 100}%`,
+                                backgroundColor: item.color 
+                            }}
+                        />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SimpleTrendChart({ data }) {
+    if (!data || data.length === 0) return <div className="text-center text-muted-foreground">No data</div>;
+    
+    const allValues = data.flatMap(d => [d.critical, d.high, d.medium, d.low]);
+    const maxValue = Math.max(...allValues) || 1;
+    
+    return (
+        <div className="h-64 flex items-end gap-1">
+            {data.map((day, i) => (
+                <div key={i} className="flex-1 flex flex-col gap-0.5 items-center">
+                    <div className="w-full flex flex-col-reverse gap-0.5">
+                        <div className="w-full bg-green-500/50 transition-all" style={{ height: `${(day.low / maxValue) * 150}px` }} />
+                        <div className="w-full bg-blue-500/50 transition-all" style={{ height: `${(day.medium / maxValue) * 150}px` }} />
+                        <div className="w-full bg-orange-500/50 transition-all" style={{ height: `${(day.high / maxValue) * 150}px` }} />
+                        <div className="w-full bg-red-500/50 transition-all" style={{ height: `${(day.critical / maxValue) * 150}px` }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground">{day.date.split('-')[2]}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
 
 export default function DashboardPage() {
     const [stats, setStats] = useState({
@@ -37,7 +74,6 @@ export default function DashboardPage() {
         recent_activity: []
     });
     const [trends, setTrends] = useState([]);
-    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchDashboardData();
@@ -53,8 +89,6 @@ export default function DashboardPage() {
             setTrends(trendsRes.data.trends);
         } catch (error) {
             console.error('Failed to fetch dashboard data:', error);
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -91,6 +125,13 @@ export default function DashboardPage() {
             bgColor: 'bg-red-400/10',
             borderColor: 'border-l-red-400'
         },
+    ];
+
+    const severityData = [
+        { name: 'Critical', count: stats.critical_alerts || 2, color: '#EF4444' },
+        { name: 'High', count: 5, color: '#F59E0B' },
+        { name: 'Medium', count: 8, color: '#3B82F6' },
+        { name: 'Low', count: 12, color: '#10B981' },
     ];
 
     return (
@@ -137,31 +178,12 @@ export default function DashboardPage() {
                             </Button>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-72">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={trends}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                        <XAxis 
-                                            dataKey="date" 
-                                            stroke="hsl(var(--muted-foreground))"
-                                            fontSize={12}
-                                            tickFormatter={(value) => value.split('-')[2]}
-                                        />
-                                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                                        <Tooltip 
-                                            contentStyle={{ 
-                                                backgroundColor: 'hsl(var(--card))',
-                                                border: '1px solid hsl(var(--border))',
-                                                borderRadius: '4px'
-                                            }}
-                                        />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="critical" stroke="#EF4444" strokeWidth={2} dot={false} />
-                                        <Line type="monotone" dataKey="high" stroke="#F59E0B" strokeWidth={2} dot={false} />
-                                        <Line type="monotone" dataKey="medium" stroke="#3B82F6" strokeWidth={2} dot={false} />
-                                        <Line type="monotone" dataKey="low" stroke="#10B981" strokeWidth={2} dot={false} />
-                                    </LineChart>
-                                </ResponsiveContainer>
+                            <SimpleTrendChart data={trends} />
+                            <div className="flex justify-center gap-4 mt-4 text-xs">
+                                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-red-500/50" /> Critical</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-orange-500/50" /> High</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500/50" /> Medium</span>
+                                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500/50" /> Low</span>
                             </div>
                         </CardContent>
                     </Card>
@@ -172,31 +194,7 @@ export default function DashboardPage() {
                             <CardTitle className="text-lg font-semibold">Severity Distribution</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-72">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart 
-                                        data={[
-                                            { name: 'Critical', count: stats.critical_alerts || 2, fill: '#EF4444' },
-                                            { name: 'High', count: 5, fill: '#F59E0B' },
-                                            { name: 'Medium', count: 8, fill: '#3B82F6' },
-                                            { name: 'Low', count: 12, fill: '#10B981' },
-                                        ]}
-                                        layout="vertical"
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                                        <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                                        <YAxis dataKey="name" type="category" stroke="hsl(var(--muted-foreground))" fontSize={12} width={60} />
-                                        <Tooltip 
-                                            contentStyle={{ 
-                                                backgroundColor: 'hsl(var(--card))',
-                                                border: '1px solid hsl(var(--border))',
-                                                borderRadius: '4px'
-                                            }}
-                                        />
-                                        <Bar dataKey="count" radius={[0, 4, 4, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
+                            <SimpleBarChart data={severityData} />
                         </CardContent>
                     </Card>
                 </div>
