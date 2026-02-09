@@ -16,7 +16,7 @@ import { Checkbox } from './components/ui/checkbox';
 import { 
     Shield, LayoutDashboard, Search, Bug, Network, MessageSquare, 
     FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight,
-    Sun, Moon, Bell, AlertCircle, Target, Activity, ArrowUpRight, Clock,
+    Sun, Moon, Bell, AlertCircle, AlertTriangle, Target, Activity, ArrowUpRight, Clock,
     Send, Bot, User, Loader2, Sparkles, Copy, Check, Globe, Server, Wifi,
     Play, FileWarning, CheckCircle, XCircle, Download, Calendar, Lightbulb, X,
     Palette, Key
