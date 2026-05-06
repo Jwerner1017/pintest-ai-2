@@ -81,8 +81,9 @@ async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict
         else:
             results = {"target": target, "scan_type": scan_type, "scan_engine": "unknown"}
 
+        # Only mark completed if the user did not cancel mid-flight.
         await db.scans.update_one(
-            {"id": scan_id},
+            {"id": scan_id, "status": "running"},
             {"$set": {"status": "completed", "progress": 100, "stage": "Completed", "results": results}},
         )
     except asyncio.CancelledError:
@@ -94,7 +95,7 @@ async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict
     except Exception as e:  # noqa: BLE001
         logger.exception("scan %s failed", scan_id)
         await db.scans.update_one(
-            {"id": scan_id},
+            {"id": scan_id, "status": "running"},
             {"$set": {"status": "failed", "progress": 100, "stage": f"Failed: {e}", "results": {"error": str(e)}}},
         )
 
