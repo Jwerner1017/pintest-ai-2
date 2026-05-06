@@ -4,7 +4,7 @@ import logging
 import shutil
 import socket
 import ssl
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import requests
@@ -250,8 +250,8 @@ def _ssl_cert_blocking(host: str, port: int):
     not_after = cert.get("notAfter")
     if not_after:
         try:
-            expires = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z")
-            days_left = (expires - datetime.utcnow()).days
+            expires = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
+            days_left = (expires - datetime.now(timezone.utc)).days
             info["days_until_expiry"] = days_left
             if days_left < 0:
                 vulns.append({

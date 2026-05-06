@@ -1,6 +1,6 @@
 """PDF report generation using ReportLab."""
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timezone
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
@@ -44,7 +44,7 @@ def build_pdf(report: dict, scans: list[dict]) -> bytes:
     story.append(Paragraph("PentestAI Security Assessment", title_style))
     story.append(Paragraph(report.get("title", ""), styles["Heading3"]))
     story.append(Paragraph(
-        f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &nbsp;·&nbsp; Report ID: {report.get('id', 'n/a')}",
+        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} &nbsp;·&nbsp; Report ID: {report.get('id', 'n/a')}",
         small,
     ))
     story.append(Spacer(1, 0.25 * inch))
