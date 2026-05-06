@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { ScanProgress } from '../components/scans/ScanProgress';
+import { AIScanSummary } from '../components/scans/AIScanSummary';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -45,9 +46,19 @@ export default function VulnerabilitiesPage() {
             setSelectedScan(final);
             setScans(prev => [final, ...prev.filter(s => s.id !== final.id)]);
             if (final.status === 'completed') toast.success('Vulnerability scan completed');
+            else if (final.status === 'cancelled') toast.info('Scan cancelled');
             else toast.error('Scan failed');
         },
     });
+
+    const cancelActiveScan = async () => {
+        if (!activeScanId) return;
+        try {
+            await axios.post(`${API_URL}/api/scans/${activeScanId}/cancel`);
+        } catch (e) {
+            toast.error('Failed to cancel');
+        }
+    };
 
     const startScan = async () => {
         if (!target.trim()) { toast.error('Please enter a target'); return; }
@@ -90,7 +101,7 @@ export default function VulnerabilitiesPage() {
                                 {loading || polling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Assessment</>}
                             </Button>
                             {liveScan && liveScan.status !== 'completed' && (
-                                <ScanProgress scan={liveScan} />
+                                <ScanProgress scan={liveScan} onCancel={cancelActiveScan} />
                             )}
                         </CardContent>
                     </Card>
@@ -121,11 +132,16 @@ export default function VulnerabilitiesPage() {
                 <div className="lg:col-span-2 overflow-hidden">
                     <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="vuln-results">
                         <CardHeader>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between gap-3">
                                 <CardTitle className="text-lg">{selectedScan ? `Vulnerabilities: ${selectedScan.target}` : 'Assessment Results'}</CardTitle>
-                                {riskScore !== undefined && (
-                                    <Badge className="bg-primary/20 text-primary border-primary/30" data-testid="risk-score">Risk {riskScore}/10</Badge>
-                                )}
+                                <div className="flex items-center gap-2">
+                                    {riskScore !== undefined && (
+                                        <Badge className="bg-primary/20 text-primary border-primary/30" data-testid="risk-score">Risk {riskScore}/10</Badge>
+                                    )}
+                                    {selectedScan?.status === 'completed' && (
+                                        <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
+                                    )}
+                                </div>
                             </div>
                             {owaspHits.length > 0 && (
                                 <div className="flex flex-wrap gap-1 pt-2" data-testid="owasp-hits">

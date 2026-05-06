@@ -1,0 +1,38 @@
+{
+  "summary": "PentestAI v1.3 fully verified. Backend: 39/39 pytest tests pass — 14 new v1.3 tests (router-split regression, cancel lifecycle, AI summary lifecycle, janitor reap) + 25 legacy regression (auth/MFA/recon/shodan/reports + v1.2 async vuln/network). Cancel: returns 200/cancelled/'Cancelled by user' on running scan, 400 on completed, 404 on unknown id, 404 cross-user (proper ownership scoping). AI Summary: Claude-powered, returns multi-line markdown with 3 bullets on first call (cached:false), identical text on second call (cached:true), 400 if scan not completed, 404 if unknown. Janitor: reap_orphaned_scans() flips status='running' -> 'failed' with stage='Orphaned (server restarted)' (verified by inserting orphan doc directly into Mongo). Split structure verified: server.py is 55 lines, /app/backend/core/{db,security,models}.py and /app/backend/routers/{auth,scans,reports,chat,dashboard}.py all import cleanly, FastAPI startup hook calls reap function. Frontend: Recon page e2e verified — start scan -> ScanProgress (data-testid='scan-progress') with Cancel (data-testid='scan-cancel-button') visible during running; Cancel click hits POST /api/scans/{id}/cancel and scan transitions to cancelled; selecting a completed scan from history reveals AI Summary button (data-testid='ai-summary-button'), click triggers Claude call (~3-5s), summary card (data-testid='ai-summary-card') and text (data-testid='ai-summary-text') render with full executive summary including 'Critical Risk', 'Priority Action', 'Business Impact' bullets.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v13_features.py",
+    "/app/backend/tests/test_scans_v12.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/v13_results.xml",
+    "/app/test_reports/pytest/regression_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/scans.py uses @app.on_event('startup') in server.py — deprecated since FastAPI 0.93; consider migrating to lifespan context manager for forward compatibility.",
+    "_active_tasks dict in routers/scans.py is per-process in-memory; if you ever scale to >1 worker, cancel() in worker A cannot reach a task running in worker B (DB still reflects 'cancelled' but the actual subprocess won't be killed). Acceptable for single-worker uvicorn, document for scale.",
+    "AI summary endpoint imports emergentintegrations inside the handler each call (lazy import) — fine for cold-start, but consider a module-level import once startup is stable to avoid per-request import overhead.",
+    "AI summary stores summary on the scan doc but does not store generation timestamp or model name — useful for audit/regeneration if the prompt template changes.",
+    "POST /api/scans/{id}/cancel updates DB to 'cancelled' even if the asyncio task is mid-subprocess; the running nmap may complete in background and the _execute_scan continues until CancelledError surfaces. Behavior is documented in the agent_to_agent_context_note and matches reality, but consider adding a final 'overwrite-prevention' guard so a late completion doesn't flip 'cancelled' back to 'completed'.",
+    "Frontend AIScanSummary has no error retry — a 500 from Claude shows a toast and the button stays clickable, which is fine; but it does not surface the underlying error detail prominently."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v13_features.py (created — 14 tests covering split-router regression, cancel lifecycle, AI summary lifecycle + caching, janitor)"
+  ],
+  "success_rate": {"backend": "100% (39/39: 14 v1.3 + 25 legacy)", "frontend": "100% (Recon e2e: cancel + AI summary)"},
+  "test_credentials": "Dynamic registration via POST /api/auth/register; tests create v13_<ts>_<hex>@test.com / password123 fresh per run.",
+  "seed_data_creation": "Each backend test run registers 2 fresh users (primary + cross-user-cancel test), creates ~6 scans (1 cancellable vuln, 1 completed recon, 1 cross-user vuln, 1 not-completed-summary vuln, 2 in regression flows). Janitor test inserts/cleans up its own ORPHAN_<uuid> doc. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.3 verified end-to-end. Three pytest files now exist: backend_test.py (v1.0/v1.1 legacy), test_scans_v12.py (v1.2 async + real engines), test_v13_features.py (v1.3 split + cancel + AI summary + janitor). Run all together: pytest /app/backend/tests/ -v --junitxml=/app/test_reports/pytest/all.xml — expect 39 passing in ~4 min. Note: hot-reload triggers when pytest writes test files; if first run shows connection timeouts, just re-run after 5s. Frontend pages /recon, /vulnerabilities, /network all wired identically with cancelActiveScan + AIScanSummary; tested /recon end-to-end (others share the same code path). EMERGENT_LLM_KEY is configured and Claude responds in 2-5s. Cancel propagation is async — UI may show progress for ~2-4s after click before useScanPolling sees status='cancelled' and clears activeScanId. nmap binary at /usr/bin/nmap; container restricted to -sT (no CAP_NET_RAW).",
+  "rca of the issue": "No issues found. All v1.3 acceptance criteria met. One transient pytest run failure occurred mid-iteration when the test file was edited and uvicorn hot-reloaded mid-suite — re-running after the reload completed showed all 14 tests green. Documented in context_for_next_testing_agent."
+}

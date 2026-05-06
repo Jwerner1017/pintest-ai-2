@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { ScanProgress } from '../components/scans/ScanProgress';
+import { AIScanSummary } from '../components/scans/AIScanSummary';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -47,9 +48,19 @@ export default function NetworkPage() {
             setSelectedScan(final);
             setScans(prev => [final, ...prev.filter(s => s.id !== final.id)]);
             if (final.status === 'completed') toast.success('Network analysis completed');
+            else if (final.status === 'cancelled') toast.info('Scan cancelled');
             else toast.error('Analysis failed');
         },
     });
+
+    const cancelActiveScan = async () => {
+        if (!activeScanId) return;
+        try {
+            await axios.post(`${API_URL}/api/scans/${activeScanId}/cancel`);
+        } catch (e) {
+            toast.error('Failed to cancel');
+        }
+    };
 
     const startScan = async () => {
         if (!target.trim()) { toast.error('Please enter a target'); return; }
@@ -92,7 +103,7 @@ export default function NetworkPage() {
                         </div>
                         {liveScan && liveScan.status !== 'completed' && (
                             <div className="mt-4">
-                                <ScanProgress scan={liveScan} />
+                                <ScanProgress scan={liveScan} onCancel={cancelActiveScan} />
                             </div>
                         )}
                     </CardContent>
@@ -100,6 +111,12 @@ export default function NetworkPage() {
 
                 {selectedScan?.results && (
                     <>
+                        <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">Results for <span className="font-mono text-foreground">{selectedScan.target}</span></p>
+                            {selectedScan?.status === 'completed' && (
+                                <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
+                            )}
+                        </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="network-summary">
                             <SummaryCard label="Hosts Alive" value={summary.hosts_alive || 0} />
                             <SummaryCard label="Hosts Mapped" value={summary.hosts_scanned_for_services || 0} />

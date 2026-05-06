@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { ScanProgress } from '../components/scans/ScanProgress';
+import { AIScanSummary } from '../components/scans/AIScanSummary';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -37,9 +38,19 @@ export default function ReconPage() {
             setSelectedScan(final);
             setScans(prev => [final, ...prev.filter(s => s.id !== final.id)]);
             if (final.status === 'completed') toast.success('Scan completed');
+            else if (final.status === 'cancelled') toast.info('Scan cancelled');
             else toast.error('Scan failed');
         },
     });
+
+    const cancelActiveScan = async () => {
+        if (!activeScanId) return;
+        try {
+            await axios.post(`${API_URL}/api/scans/${activeScanId}/cancel`);
+        } catch (e) {
+            toast.error('Failed to cancel');
+        }
+    };
 
     const fetchScans = async () => {
         try {
@@ -94,7 +105,7 @@ export default function ReconPage() {
                                 {loading || polling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Scan</>}
                             </Button>
                             {liveScan && liveScan.status !== 'completed' && (
-                                <ScanProgress scan={liveScan} />
+                                <ScanProgress scan={liveScan} onCancel={cancelActiveScan} />
                             )}
                         </CardContent>
                     </Card>
@@ -160,7 +171,14 @@ export default function ReconPage() {
                 </div>
                 <div className="lg:col-span-2 overflow-hidden">
                     <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="scan-results">
-                        <CardHeader><CardTitle className="text-lg">{selectedScan ? `Results: ${selectedScan.target}` : 'Scan Results'}</CardTitle></CardHeader>
+                        <CardHeader>
+                            <div className="flex items-center justify-between gap-3">
+                                <CardTitle className="text-lg">{selectedScan ? `Results: ${selectedScan.target}` : 'Scan Results'}</CardTitle>
+                                {selectedScan?.status === 'completed' && (
+                                    <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
+                                )}
+                            </div>
+                        </CardHeader>
                         <CardContent className="flex-1 overflow-auto">
                             {selectedScan?.results ? (
                                 <div className="space-y-6">
