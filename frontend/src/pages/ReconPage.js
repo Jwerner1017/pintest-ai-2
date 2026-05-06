@@ -163,15 +163,22 @@ export default function ReconPage() {
                                         <div>
                                             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" />Vulnerabilities</h3>
                                             <div className="space-y-2">
-                                                {selectedScan.results.vulnerabilities.map((vuln, i) => (
-                                                    <div key={i} className="p-3 bg-background/50 border border-border/20">
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <span className="font-mono text-sm text-primary">{vuln.id}</span>
-                                                            <Badge className={`bg-${vuln.severity === 'critical' ? 'red' : vuln.severity === 'high' ? 'orange' : 'yellow'}-500/20 text-${vuln.severity === 'critical' ? 'red' : vuln.severity === 'high' ? 'orange' : 'yellow'}-400`}>{vuln.severity?.toUpperCase()}</Badge>
+                                                {selectedScan.results.vulnerabilities.map((vuln, i) => {
+                                                    const sev = (vuln.severity || '').toLowerCase();
+                                                    const sevClass = sev === 'critical' ? 'bg-red-500/20 text-red-400'
+                                                        : sev === 'high' ? 'bg-orange-500/20 text-orange-400'
+                                                        : sev === 'medium' ? 'bg-yellow-500/20 text-yellow-400'
+                                                        : 'bg-green-500/20 text-green-400';
+                                                    return (
+                                                        <div key={i} className="p-3 bg-background/50 border border-border/20">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="font-mono text-sm text-primary">{vuln.id}</span>
+                                                                <Badge className={sevClass}>{vuln.severity?.toUpperCase()}</Badge>
+                                                            </div>
+                                                            <p className="text-sm text-muted-foreground">{vuln.description}</p>
                                                         </div>
-                                                        <p className="text-sm text-muted-foreground">{vuln.description}</p>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     )}
