@@ -10,75 +10,83 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 4. **IT Administrator** - Running security assessments on company infrastructure
 
 ## Core Requirements (Static)
-- JWT-based authentication with role-based access
+- JWT-based authentication with role-based access + TOTP MFA
 - Dark theme default (light mode available)
 - Hybrid UI: Visual dashboard + CLI terminal
 - AI assistant powered by Claude Sonnet 4.5
 - Modular architecture for scan types
 
-## What's Been Implemented (v1.0 - Feb 2026)
+## What's Been Implemented
 
-### Backend (FastAPI + MongoDB)
-- ✅ User authentication (register, login, JWT tokens)
-- ✅ AI chat endpoint with Claude Sonnet 4.5
-- ✅ Scan management (create, list, get, delete)
-- ✅ Dashboard statistics
-- ✅ Report generation
-- ✅ Activity logging
+### v1.0 (Feb 2026)
+- Backend: JWT auth, AI chat (Claude Sonnet 4.5), mocked scans, dashboard, reports
+- Frontend: Dark theme, dashboard, recon/vuln/network pages, AI assistant, terminal, reports, settings
 
-### Frontend (React + Tailwind + ShadcnUI)
-- ✅ Login/Register pages
-- ✅ Dashboard with metrics and quick actions
-- ✅ Reconnaissance module with scan results
-- ✅ Vulnerability assessment page
-- ✅ Network analysis page
-- ✅ AI Assistant chat interface
-- ✅ Terminal interface with AI integration
-- ✅ Reports page (select scans, generate reports)
-- ✅ Settings page (theme toggle)
-- ✅ Collapsible sidebar navigation
-
-### AI Integration
-- ✅ Claude Sonnet 4.5 via Emergent LLM key
-- ✅ System prompt configured for ethical pentesting
-- ✅ Session-based chat history
-- ✅ Terminal AI suggestions
-
-## Prioritized Backlog
-
-### P0 (Critical - Next Sprint)
-- Real integration with Nmap/actual scanning tools
-- Export reports to PDF format
-- MFA authentication
-
-### P1 (High Priority)
-- Shodan API integration for broader reconnaissance
-- Real-time scan progress indicators
-- Collaborative team features
-- Scan scheduling/automation
-
-### P2 (Medium Priority)
-- Custom vulnerability database
-- API key management for 3rd party services
-- Advanced reporting templates
-- Notification system (email alerts)
-
-### P3 (Nice to Have)
-- Mobile app version
-- Dark web monitoring integration
-- Compliance framework mapping (PCI-DSS, OWASP)
-- AI-powered remediation suggestions
+### v1.1 (Feb 2026) — Modular refactor + real tooling
+- ✅ Refactored monolithic `App.js` (1109 lines) into modular structure under `src/pages/`, `src/components/layout/`, `src/contexts/`, `src/lib/`
+- ✅ Real **Nmap** integration via `python-nmap` (recon scans now run live with mock fallback)
+- ✅ **Shodan** host intel endpoint + UI card on Reconnaissance page (requires `SHODAN_API_KEY`)
+- ✅ **PDF export** for reports via ReportLab — endpoint `GET /api/reports/{id}/pdf`
+- ✅ **TOTP MFA** (pyotp + qrcode): setup, enable, disable; two-step login flow
+- ✅ Backend split into `services/` (nmap, shodan, report, mfa)
 
 ## Technical Architecture
 ```
-Frontend (React) -> Backend (FastAPI) -> MongoDB
-                       |
-                       v
-            Claude Sonnet 4.5 (Emergent LLM Key)
+/app/
+├── backend/
+│   ├── server.py           # Routes & auth
+│   ├── services/
+│   │   ├── nmap_service.py
+│   │   ├── shodan_service.py
+│   │   ├── report_service.py
+│   │   └── mfa_service.py
+│   ├── requirements.txt
+│   └── .env                # MONGO_URL, DB_NAME, EMERGENT_LLM_KEY, SHODAN_API_KEY (optional)
+├── frontend/
+│   └── src/
+│       ├── App.js          # Routing only (~45 lines)
+│       ├── contexts/AuthContext.js
+│       ├── components/
+│       │   ├── layout/{Sidebar,Header,MainLayout}.js
+│       │   ├── routes/ProtectedRoute.js
+│       │   └── settings/MFASettings.js
+│       ├── pages/{Login,Register,Dashboard,Recon,Vulnerabilities,Network,Assistant,Terminal,Reports,Settings}Page.js
+│       └── lib/api.js
+└── memory/{PRD.md,test_credentials.md}
 ```
 
+## Key API Endpoints
+- `POST /api/auth/register` / `/login` / `/login/mfa`
+- `GET /api/auth/me`, `/auth/mfa/status`
+- `POST /api/auth/mfa/setup` / `/enable` / `/disable`
+- `POST /api/scans` (recon → real nmap, vuln/network → mocked)
+- `GET /api/scans` / `/scans/{id}`
+- `POST /api/shodan/lookup`, `GET /api/shodan/status`
+- `POST /api/reports/generate`, `GET /api/reports`, `GET /api/reports/{id}/pdf`
+- `POST /api/chat` (Claude Sonnet 4.5)
+- `GET /api/dashboard/stats`
+
+## Prioritized Backlog
+
+### P1 (High Priority)
+- Metasploit/Burp-inspired exploitation module
+- Wireshark/Zeek behavioural network analysis
+- Real-time scan progress (WebSocket / polling)
+- Configurable scan presets
+
+### P2 (Medium Priority)
+- Scan scheduling / automation
+- Team collaboration & sharing
+- Email notifications (alerts on critical findings)
+- Custom vulnerability database
+
+### P3 (Nice to Have)
+- Mobile responsive polish
+- Dark web monitoring integration
+- Compliance mapping (PCI-DSS, OWASP, NIST)
+- AI-powered remediation suggestions
+
 ## Next Tasks
-1. Integrate real Nmap scanning capabilities
-2. Add PDF report export
-3. Implement MFA for enhanced security
-4. Connect Shodan API for extended recon
+1. Exploitation module (P1)
+2. Network behavioural analytics (P1)
+3. Scheduling & notifications (P2)

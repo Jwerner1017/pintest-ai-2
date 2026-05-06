@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,6 +14,8 @@ from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+from services import nmap_service, shodan_service, report_service, mfa_service
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -63,9 +66,20 @@ class UserResponse(BaseModel):
     created_at: str
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: Optional[str] = None
     token_type: str = "bearer"
-    user: UserResponse
+    user: Optional[UserResponse] = None
+    mfa_required: bool = False
+    mfa_token: Optional[str] = None
+
+
+class MFALogin(BaseModel):
+    mfa_token: str
+    code: str
+
+
+class MFAVerify(BaseModel):
+    code: str
 
 class ChatMessage(BaseModel):
     message: str
@@ -112,6 +126,29 @@ def create_token(user_id: str, email: str, role: str) -> str:
         "iat": datetime.now(timezone.utc)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_mfa_token(user_id: str) -> str:
+    """Short-lived token used ONLY to complete the MFA second step."""
+    payload = {
+        "sub": user_id,
+        "purpose": "mfa",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_mfa_token(token: str) -> str:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="MFA session expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid MFA token")
+    if payload.get("purpose") != "mfa":
+        raise HTTPException(status_code=401, detail="Invalid MFA token")
+    return payload["sub"]
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
@@ -169,9 +206,15 @@ async def login(credentials: UserLogin):
     user = await db.users.find_one({"email": credentials.email})
     if not user or not verify_password(credentials.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
+    if user.get("mfa_enabled"):
+        return TokenResponse(
+            mfa_required=True,
+            mfa_token=create_mfa_token(user["id"]),
+            user=None,
+        )
+
     token = create_token(user["id"], user["email"], user["role"])
-    
     return TokenResponse(
         access_token=token,
         user=UserResponse(
@@ -183,9 +226,86 @@ async def login(credentials: UserLogin):
         )
     )
 
+
+@api_router.post("/auth/login/mfa", response_model=TokenResponse)
+async def login_mfa(payload: MFALogin):
+    user_id = decode_mfa_token(payload.mfa_token)
+    user = await db.users.find_one({"id": user_id})
+    if not user or not user.get("mfa_enabled") or not user.get("totp_secret"):
+        raise HTTPException(status_code=401, detail="MFA not enabled for this account")
+    if not mfa_service.verify_code(user["totp_secret"], payload.code):
+        raise HTTPException(status_code=401, detail="Invalid authentication code")
+    token = create_token(user["id"], user["email"], user["role"])
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(
+            id=user["id"],
+            email=user["email"],
+            username=user["username"],
+            role=user["role"],
+            created_at=user["created_at"],
+        ),
+    )
+
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
-    return UserResponse(**current_user)
+    return UserResponse(**{k: current_user[k] for k in ("id", "email", "username", "role", "created_at")})
+
+
+# ==================== MFA ENDPOINTS ====================
+
+@api_router.get("/auth/mfa/status")
+async def mfa_status(current_user: dict = Depends(get_current_user)):
+    return {"mfa_enabled": bool(current_user.get("mfa_enabled"))}
+
+
+@api_router.post("/auth/mfa/setup")
+async def mfa_setup(current_user: dict = Depends(get_current_user)):
+    """Generate a new TOTP secret and QR code. Not enabled until /mfa/enable succeeds."""
+    if current_user.get("mfa_enabled"):
+        raise HTTPException(status_code=400, detail="MFA already enabled")
+
+    secret = mfa_service.generate_secret()
+    uri = mfa_service.provisioning_uri(current_user["email"], secret)
+    qr = mfa_service.qr_data_url(uri)
+
+    # Store pending secret; not activated yet
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"pending_totp_secret": secret}},
+    )
+    return {"secret": secret, "otpauth_uri": uri, "qr_code": qr}
+
+
+@api_router.post("/auth/mfa/enable")
+async def mfa_enable(payload: MFAVerify, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]})
+    pending = user.get("pending_totp_secret")
+    if not pending:
+        raise HTTPException(status_code=400, detail="Run /mfa/setup first")
+    if not mfa_service.verify_code(pending, payload.code):
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"mfa_enabled": True, "totp_secret": pending}, "$unset": {"pending_totp_secret": ""}},
+    )
+    return {"mfa_enabled": True}
+
+
+@api_router.post("/auth/mfa/disable")
+async def mfa_disable(payload: MFAVerify, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": current_user["id"]})
+    if not user.get("mfa_enabled"):
+        raise HTTPException(status_code=400, detail="MFA not enabled")
+    if not mfa_service.verify_code(user.get("totp_secret", ""), payload.code):
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {"mfa_enabled": False}, "$unset": {"totp_secret": "", "pending_totp_secret": ""}},
+    )
+    return {"mfa_enabled": False}
 
 # ==================== AI CHAT ENDPOINTS ====================
 
@@ -255,10 +375,12 @@ async def get_chat_history(session_id: Optional[str] = None, current_user: dict 
 @api_router.post("/scans", response_model=ScanResponse)
 async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_current_user)):
     scan_id = str(uuid.uuid4())
-    
-    # Simulate scan results based on type
-    mock_results = generate_mock_scan_results(scan_data.scan_type, scan_data.target)
-    
+
+    if scan_data.scan_type == "recon":
+        results = await nmap_service.run_recon_scan(scan_data.target, scan_data.options)
+    else:
+        results = generate_mock_scan_results(scan_data.scan_type, scan_data.target)
+
     scan_doc = {
         "id": scan_id,
         "user_id": current_user["id"],
@@ -266,12 +388,12 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
         "target": scan_data.target,
         "options": scan_data.options,
         "status": "completed",
-        "results": mock_results,
+        "results": results,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
-    
+
     await db.scans.insert_one(scan_doc)
-    
+
     # Log activity
     await db.activity_log.insert_one({
         "id": str(uuid.uuid4()),
@@ -280,15 +402,32 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
         "target": scan_data.target,
         "created_at": datetime.now(timezone.utc).isoformat()
     })
-    
+
     return ScanResponse(
         id=scan_id,
         scan_type=scan_data.scan_type,
         target=scan_data.target,
         status="completed",
         created_at=scan_doc["created_at"],
-        results=mock_results
+        results=results,
     )
+
+
+# ==================== SHODAN ENDPOINT ====================
+
+class ShodanRequest(BaseModel):
+    target: str
+
+
+@api_router.get("/shodan/status")
+async def shodan_status(current_user: dict = Depends(get_current_user)):
+    return {"configured": shodan_service.is_configured()}
+
+
+@api_router.post("/shodan/lookup")
+async def shodan_lookup(req: ShodanRequest, current_user: dict = Depends(get_current_user)):
+    data = await shodan_service.host_lookup(req.target.strip())
+    return data
 
 @api_router.get("/scans", response_model=List[ScanResponse])
 async def list_scans(current_user: dict = Depends(get_current_user)):
@@ -400,7 +539,32 @@ async def generate_report(scan_ids: List[str], current_user: dict = Depends(get_
     }
     
     await db.reports.insert_one(report)
+    report.pop("_id", None)
     return report
+
+
+@api_router.get("/reports/{report_id}/pdf")
+async def download_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    report = await db.reports.find_one(
+        {"id": report_id, "user_id": current_user["id"]},
+        {"_id": 0},
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    scan_ids = report.get("scans", [])
+    scans = await db.scans.find(
+        {"id": {"$in": scan_ids}, "user_id": current_user["id"]},
+        {"_id": 0},
+    ).to_list(100)
+
+    pdf_bytes = report_service.build_pdf(report, scans)
+    filename = f"pentestai-report-{report_id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 # ==================== HELPER FUNCTIONS ====================
 
