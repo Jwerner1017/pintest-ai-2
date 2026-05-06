@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import asyncio
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
@@ -15,7 +16,7 @@ import jwt
 import bcrypt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
-from services import nmap_service, shodan_service, report_service, mfa_service
+from services import nmap_service, shodan_service, report_service, mfa_service, vuln_service, network_service
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -100,6 +101,8 @@ class ScanResponse(BaseModel):
     target: str
     status: str
     created_at: str
+    progress: int = 0
+    stage: Optional[str] = None
     results: Optional[dict] = None
 
 class DashboardStats(BaseModel):
@@ -374,43 +377,67 @@ async def get_chat_history(session_id: Optional[str] = None, current_user: dict 
 
 @api_router.post("/scans", response_model=ScanResponse)
 async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_current_user)):
+    """Queue a scan and run it asynchronously. Poll GET /api/scans/{id} for progress."""
     scan_id = str(uuid.uuid4())
-
-    if scan_data.scan_type == "recon":
-        results = await nmap_service.run_recon_scan(scan_data.target, scan_data.options)
-    else:
-        results = generate_mock_scan_results(scan_data.scan_type, scan_data.target)
-
+    now = datetime.now(timezone.utc).isoformat()
     scan_doc = {
         "id": scan_id,
         "user_id": current_user["id"],
         "scan_type": scan_data.scan_type,
         "target": scan_data.target,
-        "options": scan_data.options,
-        "status": "completed",
-        "results": results,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "options": scan_data.options or {},
+        "status": "running",
+        "progress": 0,
+        "stage": "Queued",
+        "results": None,
+        "created_at": now,
     }
-
     await db.scans.insert_one(scan_doc)
+    scan_doc.pop("_id", None)
 
-    # Log activity
     await db.activity_log.insert_one({
         "id": str(uuid.uuid4()),
         "user_id": current_user["id"],
         "action": f"Created {scan_data.scan_type} scan",
         "target": scan_data.target,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": now,
     })
 
-    return ScanResponse(
-        id=scan_id,
-        scan_type=scan_data.scan_type,
-        target=scan_data.target,
-        status="completed",
-        created_at=scan_doc["created_at"],
-        results=results,
-    )
+    # Kick off background task — caller polls for completion.
+    asyncio.create_task(_execute_scan(scan_id, scan_data.scan_type, scan_data.target, scan_data.options or {}))
+
+    return ScanResponse(**{k: scan_doc[k] for k in ("id", "scan_type", "target", "status", "created_at", "progress", "stage", "results")})
+
+
+async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict):
+    async def progress_cb(percent: int, stage: str):
+        await db.scans.update_one(
+            {"id": scan_id},
+            {"$set": {"progress": int(percent), "stage": stage}},
+        )
+
+    options = {**options, "progress_cb": progress_cb}
+    try:
+        await progress_cb(5, "Starting")
+        if scan_type == "recon":
+            results = await nmap_service.run_recon_scan(target, options)
+        elif scan_type == "vuln":
+            results = await vuln_service.run_vuln_scan(target, options)
+        elif scan_type == "network":
+            results = await network_service.run_network_scan(target, options)
+        else:
+            results = generate_mock_scan_results(scan_type, target)
+
+        await db.scans.update_one(
+            {"id": scan_id},
+            {"$set": {"status": "completed", "progress": 100, "stage": "Completed", "results": results}},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.exception("scan %s failed", scan_id)
+        await db.scans.update_one(
+            {"id": scan_id},
+            {"$set": {"status": "failed", "progress": 100, "stage": f"Failed: {e}", "results": {"error": str(e)}}},
+        )
 
 
 # ==================== SHODAN ENDPOINT ====================

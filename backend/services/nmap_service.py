@@ -22,12 +22,20 @@ async def run_recon_scan(target: str, options: dict | None = None) -> dict:
     """
     options = options or {}
     args = options.get("nmap_args", "-sT -sV -T4 --top-ports 100 -Pn")
+    progress_cb = options.get("progress_cb")
 
     if not (NMAP_AVAILABLE and nmap):
+        if progress_cb:
+            await progress_cb(90, "nmap unavailable — using mock")
         return _mock_result(target, "nmap binary not installed")
+
+    if progress_cb:
+        await progress_cb(20, "Running nmap recon")
 
     try:
         result = await asyncio.to_thread(_run_nmap_blocking, target, args)
+        if progress_cb:
+            await progress_cb(95, "Aggregating results")
         return result
     except Exception as e:  # noqa: BLE001
         logger.warning("nmap scan failed for %s: %s", target, e)

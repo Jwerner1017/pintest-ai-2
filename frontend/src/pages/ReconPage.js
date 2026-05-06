@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
+import { ScanProgress } from '../components/scans/ScanProgress';
+import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
 export default function ReconPage() {
@@ -16,6 +18,7 @@ export default function ReconPage() {
     const [loading, setLoading] = useState(false);
     const [scans, setScans] = useState([]);
     const [selectedScan, setSelectedScan] = useState(null);
+    const [activeScanId, setActiveScanId] = useState(null);
     const [shodanTarget, setShodanTarget] = useState('');
     const [shodanLoading, setShodanLoading] = useState(false);
     const [shodanResult, setShodanResult] = useState(null);
@@ -25,6 +28,18 @@ export default function ReconPage() {
         fetchScans();
         axios.get(`${API_URL}/api/shodan/status`).then(r => setShodanConfigured(r.data.configured)).catch(() => {});
     }, []);
+
+    const { scan: liveScan, polling } = useScanPolling(activeScanId, {
+        intervalMs: 2000,
+        onComplete: (final) => {
+            setActiveScanId(null);
+            setLoading(false);
+            setSelectedScan(final);
+            setScans(prev => [final, ...prev.filter(s => s.id !== final.id)]);
+            if (final.status === 'completed') toast.success('Scan completed');
+            else toast.error('Scan failed');
+        },
+    });
 
     const fetchScans = async () => {
         try {
@@ -38,12 +53,12 @@ export default function ReconPage() {
         setLoading(true);
         try {
             const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'recon', target: target.trim(), options: {} });
-            toast.success('Scan completed successfully');
-            setScans(prev => [response.data, ...prev]);
-            setSelectedScan(response.data);
+            setActiveScanId(response.data.id);
             setTarget('');
-        } catch (error) { toast.error('Scan failed'); }
-        finally { setLoading(false); }
+        } catch (error) {
+            toast.error('Failed to queue scan');
+            setLoading(false);
+        }
     };
 
     const runShodanLookup = async () => {
@@ -75,9 +90,12 @@ export default function ReconPage() {
                                 <Label>Target</Label>
                                 <Input placeholder="example.com or 192.168.1.1" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="scan-target-input" />
                             </div>
-                            <Button className="w-full" onClick={startScan} disabled={loading || !target.trim()} data-testid="start-scan-button">
-                                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Scan</>}
+                            <Button className="w-full" onClick={startScan} disabled={loading || polling || !target.trim()} data-testid="start-scan-button">
+                                {loading || polling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Scan</>}
                             </Button>
+                            {liveScan && liveScan.status !== 'completed' && (
+                                <ScanProgress scan={liveScan} />
+                            )}
                         </CardContent>
                     </Card>
                     <Card className="border-border/40 bg-card/20" data-testid="scan-history">

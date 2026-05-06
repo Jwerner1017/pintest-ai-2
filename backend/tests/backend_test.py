@@ -153,12 +153,24 @@ class TestReconScan:
             "target": "scanme.nmap.org",
             "options": {"nmap_args": "-sT -Pn --top-ports 5"},
         }
-        r = session.post(f"{API}/scans", headers=auth_headers, json=payload, timeout=180)
+        r = session.post(f"{API}/scans", headers=auth_headers, json=payload, timeout=30)
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["scan_type"] == "recon"
         assert body["target"] == "scanme.nmap.org"
-        results = body.get("results") or {}
+        # v1.2: scans run async — poll until completed
+        scan_id = body["id"]
+        deadline = time.time() + 120
+        final = body
+        while time.time() < deadline:
+            rr = session.get(f"{API}/scans/{scan_id}", headers=auth_headers, timeout=15)
+            assert rr.status_code == 200
+            final = rr.json()
+            if final.get("status") in ("completed", "failed"):
+                break
+            time.sleep(3)
+        assert final["status"] == "completed", f"final={final}"
+        results = final.get("results") or {}
         engine = results.get("scan_engine")
         # Either engine is acceptable in restricted env, but we want to know which:
         assert engine in ("nmap", "mock"), f"unexpected engine {engine}"
@@ -193,7 +205,15 @@ class TestReports:
             "scan_type": "vuln", "target": "example.com"
         }, timeout=30)
         assert r.status_code == 200
-        TestReports.state["scan_id"] = r.json()["id"]
+        scan_id = r.json()["id"]
+        # v1.2: poll until completed (vuln scan runs async)
+        deadline = time.time() + 240
+        while time.time() < deadline:
+            rr = session.get(f"{API}/scans/{scan_id}", headers=auth_headers, timeout=15)
+            if rr.status_code == 200 and rr.json().get("status") in ("completed", "failed"):
+                break
+            time.sleep(3)
+        TestReports.state["scan_id"] = scan_id
 
     def test_generate_report(self, session, auth_headers):
         scan_id = TestReports.state["scan_id"]
