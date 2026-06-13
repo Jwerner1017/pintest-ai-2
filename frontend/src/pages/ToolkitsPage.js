@@ -4,6 +4,7 @@ import { ExternalLink, Hammer, Shield, Eye, Wifi } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Header } from '../components/layout/Header';
+import { LaunchDistroButton } from '../components/scans/LaunchDistroButton';
 import { API_URL } from '../lib/api';
 
 const FOCUS_ICONS = {
@@ -81,6 +82,9 @@ export default function ToolkitsPage() {
                                     <div className="p-2 bg-background/50 border border-border/30 text-xs">
                                         <span className="font-medium text-foreground">When to use: </span>
                                         <span className="text-muted-foreground">{d.use_when}</span>
+                                    </div>
+                                    <div className="pt-1">
+                                        <LaunchDistroButton distroId={d.id} distroName={d.name} variant="default" />
                                     </div>
                                 </CardContent>
                             </Card>

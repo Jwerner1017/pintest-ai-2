@@ -118,7 +118,11 @@ export default function NetworkPage() {
                 {selectedScan?.results && (
                     <>
                         {results.recommended_distros && (
-                            <DistroRecommendation recommendation={results.recommended_distros} />
+                            <DistroRecommendation
+                                recommendation={results.recommended_distros}
+                                target={selectedScan?.target}
+                                scanId={selectedScan?.id}
+                            />
                         )}
                         <div className="flex items-center justify-between">
                             <p className="text-sm text-muted-foreground">Results for <span className="font-mono text-foreground">{selectedScan.target}</span></p>

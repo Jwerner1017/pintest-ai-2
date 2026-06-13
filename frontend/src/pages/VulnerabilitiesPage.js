@@ -155,7 +155,11 @@ export default function VulnerabilitiesPage() {
                         </CardHeader>
                         <CardContent className="flex-1 overflow-auto space-y-4">
                             {results.recommended_distros && (
-                                <DistroRecommendation recommendation={results.recommended_distros} />
+                                <DistroRecommendation
+                                    recommendation={results.recommended_distros}
+                                    target={selectedScan?.target}
+                                    scanId={selectedScan?.id}
+                                />
                             )}
                             {vulnerabilities.length > 0 ? (
                                 <div className="space-y-3">

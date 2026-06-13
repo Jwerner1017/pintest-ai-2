@@ -185,7 +185,11 @@ export default function ReconPage() {
                         </CardHeader>
                         <CardContent className="flex-1 overflow-auto space-y-4">
                             {selectedScan?.results?.recommended_distros && (
-                                <DistroRecommendation recommendation={selectedScan.results.recommended_distros} />
+                                <DistroRecommendation
+                                    recommendation={selectedScan.results.recommended_distros}
+                                    target={selectedScan.target}
+                                    scanId={selectedScan.id}
+                                />
                             )}
                             {selectedScan?.results ? (
                                 <div className="space-y-6">
