@@ -5,7 +5,10 @@ import shutil
 
 logger = logging.getLogger(__name__)
 
-NMAP_AVAILABLE = shutil.which("nmap") is not None
+
+def _nmap_available() -> bool:
+    return shutil.which("nmap") is not None
+
 
 try:
     import nmap
@@ -33,7 +36,7 @@ async def run_network_scan(target: str, options: dict | None = None) -> dict:
     discovery_args = options.get("discovery_args", "-sn -T4 -PS22,80,443 --host-timeout 30s")
     service_args = options.get("service_args", "-sT -sV -T4 --top-ports 50 -Pn --host-timeout 60s")
 
-    if not (NMAP_AVAILABLE and nmap):
+    if not (_nmap_available() and nmap):
         return {
             "target": target,
             "scan_type": "network_analysis",

@@ -13,7 +13,10 @@ from services import nvd_service
 
 logger = logging.getLogger(__name__)
 
-NMAP_AVAILABLE = shutil.which("nmap") is not None
+
+def _nmap_available() -> bool:
+    return shutil.which("nmap") is not None
+
 
 try:
     import nmap
@@ -50,7 +53,7 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
         await progress_cb(10, "Resolving target")
 
     # 1. nmap NSE vuln scan (real CVE-aware scripts)
-    if NMAP_AVAILABLE and nmap:
+    if _nmap_available() and nmap:
         if progress_cb:
             await progress_cb(20, "Running nmap vulnerability scripts")
         try:

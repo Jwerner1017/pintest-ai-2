@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { FileText, Loader2, Download } from 'lucide-react';
+import { FileText, Loader2, Download, FileCode } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -16,6 +16,7 @@ export default function ReportsPage() {
     const [reports, setReports] = useState([]);
     const [generatingReport, setGeneratingReport] = useState(false);
     const [downloadingId, setDownloadingId] = useState(null);
+    const [downloadingSarifId, setDownloadingSarifId] = useState(null);
 
     useEffect(() => { fetchData(); }, []);
 
@@ -63,6 +64,26 @@ export default function ReportsPage() {
         }
     };
 
+    const downloadSarif = async (reportId) => {
+        setDownloadingSarifId(reportId);
+        try {
+            const response = await axios.get(`${API_URL}/api/reports/${reportId}/sarif`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/sarif+json' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `pentestai-report-${reportId}.sarif`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('SARIF exported');
+        } catch (error) {
+            toast.error('Failed to export SARIF');
+        } finally {
+            setDownloadingSarifId(null);
+        }
+    };
+
     return (
         <div className="flex-1 flex flex-col" data-testid="reports-page">
             <Header title="Reports" subtitle="Generate and manage security reports" />
@@ -102,15 +123,27 @@ export default function ReportsPage() {
                                                     <h3 className="font-medium text-sm truncate">{report.title}</h3>
                                                     <p className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()}</p>
                                                 </div>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => downloadPdf(report.id)}
-                                                    disabled={downloadingId === report.id}
-                                                    data-testid={`download-pdf-${report.id}`}
-                                                >
-                                                    {downloadingId === report.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Download className="w-4 h-4 mr-1" />PDF</>}
-                                                </Button>
+                                                <div className="flex gap-2 flex-shrink-0">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => downloadPdf(report.id)}
+                                                        disabled={downloadingId === report.id}
+                                                        data-testid={`download-pdf-${report.id}`}
+                                                    >
+                                                        {downloadingId === report.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Download className="w-4 h-4 mr-1" />PDF</>}
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => downloadSarif(report.id)}
+                                                        disabled={downloadingSarifId === report.id}
+                                                        data-testid={`download-sarif-${report.id}`}
+                                                        title="SARIF 2.1 — for GitHub Code Scanning, GitLab SAST, etc."
+                                                    >
+                                                        {downloadingSarifId === report.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><FileCode className="w-4 h-4 mr-1" />SARIF</>}
+                                                    </Button>
+                                                </div>
                                             </div>
                                             <div className="grid grid-cols-4 gap-2 mt-3">
                                                 <div className="p-2 bg-red-500/10 text-center"><p className="text-lg font-bold text-red-400">{report.summary?.critical || 0}</p><p className="text-xs">Critical</p></div>

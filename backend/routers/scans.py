@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from core.db import db
 from core.models import ScanCreate, ScanResponse, ShodanRequest
 from core.security import get_current_user
-from services import nmap_service, vuln_service, network_service, shodan_service, presets as presets_service, distros as distros_service
+from services import nmap_service, vuln_service, network_service, shodan_service, presets as presets_service, distros as distros_service, sarif_service
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,25 @@ async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_use
     return {"message": "Scan deleted"}
 
 
+@router.get("/scans/{scan_id}/sarif")
+async def scan_sarif(scan_id: str, current_user: dict = Depends(get_current_user)):
+    """Download scan results as SARIF 2.1 JSON (consumable by GitHub Code Scanning, etc.)."""
+    scan = await db.scans.find_one({"id": scan_id, "user_id": current_user["id"]}, {"_id": 0})
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Scan must be completed for SARIF export")
+
+    sarif = sarif_service.build_sarif_for_scans([scan])
+    import json
+    body = json.dumps(sarif, indent=2, default=str).encode("utf-8")
+    return Response(
+        content=body,
+        media_type="application/sarif+json",
+        headers={"Content-Disposition": f'attachment; filename="pentestai-scan-{scan_id}.sarif"'},
+    )
+
+
 # ==================== AI scan summary ====================
 
 @router.post("/scans/{scan_id}/summary")
@@ -225,7 +245,7 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
     }
 
 
-# ==================== Shodan ====================
+# ==================== Presets ====================
 
 @router.get("/shodan/status")
 async def shodan_status(current_user: dict = Depends(get_current_user)):

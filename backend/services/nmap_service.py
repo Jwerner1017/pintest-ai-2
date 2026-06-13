@@ -5,7 +5,10 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-NMAP_AVAILABLE = shutil.which("nmap") is not None
+
+def _nmap_available() -> bool:
+    return shutil.which("nmap") is not None
+
 
 try:
     import nmap  # python-nmap
@@ -24,7 +27,7 @@ async def run_recon_scan(target: str, options: dict | None = None) -> dict:
     args = options.get("nmap_args", "-sT -sV -T4 --top-ports 100 -Pn")
     progress_cb = options.get("progress_cb")
 
-    if not (NMAP_AVAILABLE and nmap):
+    if not (_nmap_available() and nmap):
         if progress_cb:
             await progress_cb(90, "nmap unavailable — using mock")
         return _mock_result(target, "nmap binary not installed")

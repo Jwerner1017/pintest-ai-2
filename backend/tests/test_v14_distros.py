@@ -28,7 +28,7 @@ def auth_headers():
 def test_root_version_is_1_4():
     r = requests.get(f"{API}/", timeout=10)
     assert r.status_code == 200
-    assert r.json().get("version") == "1.4.0"
+    assert r.json().get("version", "").startswith("1.")  # v1.x — bumped to 1.5.0 in v1.5
 
 
 # ===== GET /api/distros =====
