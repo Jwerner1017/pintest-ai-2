@@ -1,4 +1,5 @@
-"""Reports + PDF download routes."""
+"""Reports + PDF + SARIF download routes."""
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import List
@@ -82,7 +83,6 @@ async def download_report_sarif(report_id: str, current_user: dict = Depends(get
     ).to_list(100)
 
     sarif = sarif_service.build_sarif_for_scans(scans)
-    import json
     body = json.dumps(sarif, indent=2, default=str).encode("utf-8")
     filename = f"pentestai-report-{report_id}.sarif"
     return Response(

@@ -1,5 +1,6 @@
 """Scan + Shodan + AI summariser routes. Includes background-task tracking & cancellation."""
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -171,7 +172,6 @@ async def scan_sarif(scan_id: str, current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=400, detail="Scan must be completed for SARIF export")
 
     sarif = sarif_service.build_sarif_for_scans([scan])
-    import json
     body = json.dumps(sarif, indent=2, default=str).encode("utf-8")
     return Response(
         content=body,
@@ -219,7 +219,6 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
         system_message=system_prompt,
     ).with_model("anthropic", model_name)
 
-    import json
     payload = {
         "scan_type": scan.get("scan_type"),
         "target": scan.get("target"),
