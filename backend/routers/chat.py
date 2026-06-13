@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.db import db
 from core.models import ChatMessage, ChatResponse
 from core.security import get_current_user
+from services import distros as distros_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,7 +31,7 @@ IMPORTANT RULES:
 - Format responses with clear headers and bullet points
 - Include command examples when relevant
 
-When suggesting commands, format them in code blocks for easy copying."""
+When suggesting commands, format them in code blocks for easy copying.""" + distros_service.assistant_system_addendum()
 
 
 @router.post("/chat", response_model=ChatResponse)

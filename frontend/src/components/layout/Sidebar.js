@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     Shield, LayoutDashboard, Search, Bug, Network, MessageSquare,
-    FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight
+    FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight, Boxes
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +15,7 @@ const navItems = [
     { path: '/assistant', label: 'AI Assistant', icon: MessageSquare },
     { path: '/terminal', label: 'Terminal', icon: Terminal },
     { path: '/reports', label: 'Reports', icon: FileText },
+    { path: '/toolkits', label: 'Toolkits', icon: Boxes },
     { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

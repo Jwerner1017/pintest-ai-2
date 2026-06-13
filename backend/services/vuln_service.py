@@ -1,4 +1,4 @@
-"""Vulnerability scanning: nmap NSE vuln scripts + HTTP probe."""
+"""Vulnerability scanning: nmap NSE vuln scripts + HTTP probe + NVD CVE enrichment."""
 import asyncio
 import logging
 import shutil
@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import requests
+
+from services import nvd_service
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,7 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
     """
     options = options or {}
     progress_cb = options.get("progress_cb")
+    nmap_args = options.get("nmap_args", "-sT -sV -T4 --top-ports 100 -Pn --script vuln --host-timeout 90s")
     host = _extract_host(target)
     is_url = target.startswith(("http://", "https://"))
 
@@ -51,7 +54,7 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
         if progress_cb:
             await progress_cb(20, "Running nmap vulnerability scripts")
         try:
-            nmap_summary, nmap_vulns = await asyncio.to_thread(_nmap_vuln_blocking, host)
+            nmap_summary, nmap_vulns = await asyncio.to_thread(_nmap_vuln_blocking, host, nmap_args)
             vulns.extend(nmap_vulns)
         except Exception as e:  # noqa: BLE001
             logger.warning("nmap vuln scan failed for %s: %s", host, e)
@@ -80,6 +83,17 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
             logger.warning("ssl cert check failed: %s", e)
 
     if progress_cb:
+        await progress_cb(85, "Enriching findings via NVD")
+
+    # 4. NVD CVE enrichment from nmap-detected service versions
+    try:
+        enrich_ports = nmap_summary.get("ports") or []
+        cve_findings = await nvd_service.enrich_ports(enrich_ports)
+        vulns.extend(cve_findings)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("NVD enrichment failed: %s", e)
+
+    if progress_cb:
         await progress_cb(95, "Aggregating findings")
 
     severities = [v["severity"] for v in vulns]
@@ -105,10 +119,9 @@ def _extract_host(target: str) -> str:
     return target.split("/")[0]
 
 
-def _nmap_vuln_blocking(host: str):
+def _nmap_vuln_blocking(host: str, args: str):
     scanner = nmap.PortScanner()
-    # -sV for service detection, vuln scripts, top 100 ports for speed
-    scanner.scan(hosts=host, arguments="-sT -sV -T4 --top-ports 100 -Pn --script vuln --host-timeout 90s")
+    scanner.scan(hosts=host, arguments=args)
 
     vulns: list[dict] = []
     summary = {"hosts_scanned": 0, "ports": []}
@@ -120,7 +133,8 @@ def _nmap_vuln_blocking(host: str):
                 summary["ports"].append({
                     "port": port,
                     "service": info.get("name"),
-                    "version": f"{info.get('product', '')} {info.get('version', '')}".strip(),
+                    "product": info.get("product", ""),
+                    "version": info.get("version", ""),
                 })
                 # NSE vuln script output is in info['script'] dict
                 scripts = info.get("script", {})

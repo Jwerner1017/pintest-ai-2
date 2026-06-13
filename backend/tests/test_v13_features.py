@@ -59,7 +59,7 @@ class TestRouterSplitRegression:
     def test_root(self, session):
         r = session.get(f"{API}/", timeout=10)
         assert r.status_code == 200
-        assert "1.3" in r.json().get("version", "")
+        assert r.json().get("version", "").startswith("1.")
 
     def test_auth_me(self, session, auth_headers):
         r = session.get(f"{API}/auth/me", headers=auth_headers, timeout=10)

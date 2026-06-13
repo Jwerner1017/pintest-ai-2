@@ -11,6 +11,8 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { ScanProgress } from '../components/scans/ScanProgress';
 import { AIScanSummary } from '../components/scans/AIScanSummary';
+import { PresetSelector } from '../components/scans/PresetSelector';
+import { DistroRecommendation } from '../components/scans/DistroRecommendation';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -28,6 +30,7 @@ export default function NetworkPage() {
     const [scans, setScans] = useState([]);
     const [selectedScan, setSelectedScan] = useState(null);
     const [activeScanId, setActiveScanId] = useState(null);
+    const [preset, setPreset] = useState('fast');
 
     useEffect(() => { fetchScans(); }, []);
 
@@ -66,7 +69,7 @@ export default function NetworkPage() {
         if (!target.trim()) { toast.error('Please enter a target'); return; }
         setLoading(true);
         try {
-            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'network', target: target.trim(), options: {} });
+            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'network', target: target.trim(), options: { preset } });
             setActiveScanId(response.data.id);
             setTarget('');
         } catch (error) {
@@ -97,6 +100,9 @@ export default function NetworkPage() {
                                     data-testid="network-target-input"
                                 />
                             </div>
+                            <div className="md:w-72">
+                                <PresetSelector scanType="network" value={preset} onChange={setPreset} />
+                            </div>
                             <Button onClick={startScan} disabled={loading || polling || !target.trim()} data-testid="start-network-scan-button">
                                 {loading || polling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</> : <><Play className="w-4 h-4 mr-2" />Start Analysis</>}
                             </Button>
@@ -111,6 +117,9 @@ export default function NetworkPage() {
 
                 {selectedScan?.results && (
                     <>
+                        {results.recommended_distros && (
+                            <DistroRecommendation recommendation={results.recommended_distros} />
+                        )}
                         <div className="flex items-center justify-between">
                             <p className="text-sm text-muted-foreground">Results for <span className="font-mono text-foreground">{selectedScan.target}</span></p>
                             {selectedScan?.status === 'completed' && (

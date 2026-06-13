@@ -11,6 +11,8 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { ScanProgress } from '../components/scans/ScanProgress';
 import { AIScanSummary } from '../components/scans/AIScanSummary';
+import { PresetSelector } from '../components/scans/PresetSelector';
+import { DistroRecommendation } from '../components/scans/DistroRecommendation';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -24,6 +26,7 @@ export default function ReconPage() {
     const [shodanLoading, setShodanLoading] = useState(false);
     const [shodanResult, setShodanResult] = useState(null);
     const [shodanConfigured, setShodanConfigured] = useState(true);
+    const [preset, setPreset] = useState('fast');
 
     useEffect(() => {
         fetchScans();
@@ -63,7 +66,7 @@ export default function ReconPage() {
         if (!target.trim()) { toast.error('Please enter a target'); return; }
         setLoading(true);
         try {
-            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'recon', target: target.trim(), options: {} });
+            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'recon', target: target.trim(), options: { preset } });
             setActiveScanId(response.data.id);
             setTarget('');
         } catch (error) {
@@ -101,6 +104,7 @@ export default function ReconPage() {
                                 <Label>Target</Label>
                                 <Input placeholder="example.com or 192.168.1.1" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="scan-target-input" />
                             </div>
+                            <PresetSelector scanType="recon" value={preset} onChange={setPreset} />
                             <Button className="w-full" onClick={startScan} disabled={loading || polling || !target.trim()} data-testid="start-scan-button">
                                 {loading || polling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Scan</>}
                             </Button>
@@ -179,7 +183,10 @@ export default function ReconPage() {
                                 )}
                             </div>
                         </CardHeader>
-                        <CardContent className="flex-1 overflow-auto">
+                        <CardContent className="flex-1 overflow-auto space-y-4">
+                            {selectedScan?.results?.recommended_distros && (
+                                <DistroRecommendation recommendation={selectedScan.results.recommended_distros} />
+                            )}
                             {selectedScan?.results ? (
                                 <div className="space-y-6">
                                     {selectedScan.results.ports && (

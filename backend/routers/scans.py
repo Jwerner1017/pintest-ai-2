@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from core.db import db
 from core.models import ScanCreate, ScanResponse, ShodanRequest
 from core.security import get_current_user
-from services import nmap_service, vuln_service, network_service, shodan_service
+from services import nmap_service, vuln_service, network_service, shodan_service, presets as presets_service, distros as distros_service
 
 logger = logging.getLogger(__name__)
 
@@ -69,17 +69,26 @@ async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict
             {"$set": {"progress": int(percent), "stage": stage}},
         )
 
-    options = {**options, "progress_cb": progress_cb}
+    # Resolve preset → concrete nmap args (caller may override per-key in options).
+    preset_name = options.get("preset")
+    preset_cfg = presets_service.get_preset(scan_type, preset_name)
+    merged = {**preset_cfg, **{k: v for k, v in options.items() if v is not None}}
+    merged["progress_cb"] = progress_cb
+
     try:
-        await progress_cb(5, "Starting")
+        await progress_cb(5, f"Starting ({preset_cfg.get('label', 'default')})")
         if scan_type == "recon":
-            results = await nmap_service.run_recon_scan(target, options)
+            results = await nmap_service.run_recon_scan(target, merged)
         elif scan_type == "vuln":
-            results = await vuln_service.run_vuln_scan(target, options)
+            results = await vuln_service.run_vuln_scan(target, merged)
         elif scan_type == "network":
-            results = await network_service.run_network_scan(target, options)
+            results = await network_service.run_network_scan(target, merged)
         else:
             results = {"target": target, "scan_type": scan_type, "scan_engine": "unknown"}
+
+        if results is not None:
+            results["preset"] = preset_name or presets_service.DEFAULT_PRESET
+            results["recommended_distros"] = distros_service.recommend_for(scan_type)
 
         # Only mark completed if the user did not cancel mid-flight.
         await db.scans.update_one(
@@ -120,6 +129,11 @@ async def cancel_scan(scan_id: str, current_user: dict = Depends(get_current_use
     return _scan_resp(scan)
 
 
+@router.get("/scans/presets")
+async def list_scan_presets(current_user: dict = Depends(get_current_user)):
+    return presets_service.list_presets()
+
+
 @router.get("/scans", response_model=List[ScanResponse])
 async def list_scans(current_user: dict = Depends(get_current_user)):
     scans = await db.scans.find(
@@ -157,7 +171,12 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
     if scan.get("status") != "completed":
         raise HTTPException(status_code=400, detail="Scan must be completed before summarising")
     if scan.get("ai_summary"):
-        return {"summary": scan["ai_summary"], "cached": True}
+        return {
+            "summary": scan["ai_summary"],
+            "model": scan.get("ai_summary_model"),
+            "generated_at": scan.get("ai_summary_generated_at"),
+            "cached": True,
+        }
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
@@ -165,6 +184,7 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
 
     from emergentintegrations.llm.chat import LlmChat, UserMessage  # local import to avoid global cost
 
+    model_name = "claude-sonnet-4-5-20250929"
     system_prompt = (
         "You are a senior penetration testing analyst. Given raw scan output, write a concise "
         "executive summary as EXACTLY 3 markdown bullet points (each <= 25 words). "
@@ -177,7 +197,7 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
         api_key=api_key,
         session_id=f"summary_{scan_id}",
         system_message=system_prompt,
-    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    ).with_model("anthropic", model_name)
 
     import json
     payload = {
@@ -187,9 +207,22 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
     }
     msg = UserMessage(text=f"Scan output:\n```json\n{json.dumps(payload, default=str)[:6000]}\n```")
     summary = await chat.send_message(msg)
+    generated_at = datetime.now(timezone.utc).isoformat()
 
-    await db.scans.update_one({"id": scan_id}, {"$set": {"ai_summary": summary}})
-    return {"summary": summary, "cached": False}
+    await db.scans.update_one(
+        {"id": scan_id},
+        {"$set": {
+            "ai_summary": summary,
+            "ai_summary_model": model_name,
+            "ai_summary_generated_at": generated_at,
+        }},
+    )
+    return {
+        "summary": summary,
+        "model": model_name,
+        "generated_at": generated_at,
+        "cached": False,
+    }
 
 
 # ==================== Shodan ====================

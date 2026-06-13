@@ -30,6 +30,8 @@ async def run_network_scan(target: str, options: dict | None = None) -> dict:
     """Discover live hosts in `target` (CIDR or single host) and map services."""
     options = options or {}
     progress_cb = options.get("progress_cb")
+    discovery_args = options.get("discovery_args", "-sn -T4 -PS22,80,443 --host-timeout 30s")
+    service_args = options.get("service_args", "-sT -sV -T4 --top-ports 50 -Pn --host-timeout 60s")
 
     if not (NMAP_AVAILABLE and nmap):
         return {
@@ -46,7 +48,7 @@ async def run_network_scan(target: str, options: dict | None = None) -> dict:
         await progress_cb(10, "Discovering live hosts")
 
     try:
-        alive = await asyncio.to_thread(_nmap_ping_sweep_blocking, target)
+        alive = await asyncio.to_thread(_nmap_ping_sweep_blocking, target, discovery_args)
     except Exception as e:  # noqa: BLE001
         logger.warning("nmap ping sweep failed: %s", e)
         alive = []
@@ -57,7 +59,7 @@ async def run_network_scan(target: str, options: dict | None = None) -> dict:
     host_data: list[dict] = []
     if alive:
         try:
-            host_data = await asyncio.to_thread(_nmap_service_map_blocking, alive)
+            host_data = await asyncio.to_thread(_nmap_service_map_blocking, alive, service_args)
         except Exception as e:  # noqa: BLE001
             logger.warning("nmap service map failed: %s", e)
 
@@ -85,28 +87,23 @@ async def run_network_scan(target: str, options: dict | None = None) -> dict:
     }
 
 
-def _nmap_ping_sweep_blocking(target: str) -> list[str]:
+def _nmap_ping_sweep_blocking(target: str, args: str) -> list[str]:
     scanner = nmap.PortScanner()
-    # -sn -PS uses TCP SYN to common ports for discovery (works without raw sockets via TCP connect fallback).
-    args = "-sn -T4 -PS22,80,443 --host-timeout 30s"
     try:
         scanner.scan(hosts=target, arguments=args)
         alive = [h for h in scanner.all_hosts() if scanner[h].state() == "up"]
     except Exception:  # noqa: BLE001
         alive = []
 
-    # If discovery returned nothing (common in restrictive containers without raw socket),
-    # treat single hosts as alive and let the service scan run with -Pn.
     if not alive and "/" not in target and "-" not in target:
         alive = [target]
     return alive
 
 
-def _nmap_service_map_blocking(hosts: list[str]) -> list[dict]:
+def _nmap_service_map_blocking(hosts: list[str], args: str) -> list[dict]:
     scanner = nmap.PortScanner()
     targets = " ".join(hosts[:32])
-    # -sT (TCP connect) avoids raw socket requirement.
-    scanner.scan(hosts=targets, arguments="-sT -sV -T4 --top-ports 50 -Pn --host-timeout 60s")
+    scanner.scan(hosts=targets, arguments=args)
 
     results: list[dict] = []
     for h in scanner.all_hosts():
