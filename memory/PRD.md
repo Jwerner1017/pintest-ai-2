@@ -33,6 +33,18 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - **v1.4** NVD CVE enrichment, scan presets, lifespan, AI summary metadata, DEFT/BackBox/Kodachi/Pentoo distros
 
 ### v1.5 (Feb 2026)
+- ✅ **Self-healing nmap install**: lifespan startup hook `_ensure_nmap_installed()` runs `apt-get install -y nmap` if missing.
+- ✅ **Runtime nmap detection**: services now use `_nmap_available()` at call-time.
+- ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
+- ✅ Frontend SARIF download button on each report card.
+
+### v1.6 (Feb 2026) — One-click "Launch in distro"
+- ✅ **`GET /api/distros/{id}/launch?target=&scan_id=`** returns a self-contained bash script for BackBox / Pentoo / DEFT / Kodachi pre-loaded with `PENTESTAI_TARGET` env var.
+   - BackBox & Pentoo → Docker workflows (`docker run backbox/backbox:latest`, `gentoo/stage3:latest`)
+   - DEFT → informational (ISO download + `dd` command — evidence work requires live media)
+   - Kodachi → informational (ISO + qemu-system + Tor/proxychains commands — anti-forensic, live-only)
+- ✅ **CR/LF & control-char sanitisation** — `_sanitize()` strips CR/LF/tabs and non-printable chars before shell-quoting; verified injection-safe (attempted `evil.com\ntouch /tmp/PWNED\n#` payload is squashed into an inert single-quoted string).
+- ✅ **Launch buttons** in ToolkitsPage (per distro card) and DistroRecommendation (per recommended distro on scan results, passes `target` + `scan_id` from the completed scan).
 - ✅ **Self-healing nmap install**: lifespan startup hook `_ensure_nmap_installed()` runs `apt-get install -y nmap` if missing (≤2s noop / ~15s install). Container can now be rebuilt without manual intervention.
 - ✅ **Runtime nmap detection**: services now call `_nmap_available()` at scan-execute time instead of module-import time, so newly-installed nmap is picked up without a reload.
 - ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` produce SARIF 2.1.0 JSON consumable by GitHub Code Scanning, GitLab SAST, Azure DevOps. Includes proper severity mapping (critical/high→error, medium→warning, low→note, info→none), CVSS-numeric `security-severity`, rule deduplication, and aggregated multi-scan runs for reports.

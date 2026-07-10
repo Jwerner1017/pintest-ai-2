@@ -9,12 +9,22 @@ from datetime import datetime, timezone
 
 def build_launch_script(distro_id: str, target: str, scan_id: str | None) -> tuple[str, str]:
     """Return (script_text, filename) for the given distro + target."""
-    target = (target or "").strip() or "example.com"
-    scan_id = scan_id or ""
+    target = _sanitize(target) or "example.com"
+    scan_id = _sanitize(scan_id or "")
     builder = _BUILDERS.get(distro_id)
     if not builder:
         raise KeyError(distro_id)
     return builder(target, scan_id)
+
+
+def _sanitize(s: str) -> str:
+    """Strip CR/LF and other control chars so values cannot break out of bash
+    comments or env-export single-quotes. Allows printable ASCII + common
+    punctuation only."""
+    if not s:
+        return ""
+    # Drop CR/LF/tab and any non-printable / high-bit chars.
+    return "".join(c for c in s if 32 <= ord(c) < 127 and c not in "\r\n").strip()
 
 
 def _preamble(distro_name: str, target: str, scan_id: str) -> str:
@@ -38,7 +48,12 @@ echo "[PentestAI] target=$PENTESTAI_TARGET  scan_id=$PENTESTAI_SCAN_ID"
 
 
 def _shell_quote(s: str) -> str:
-    """Conservative single-quoting; only ASCII safe contexts pass through."""
+    """Single-quote escape for safe interpolation into bash env-export lines.
+
+    Values must be pre-sanitised by _sanitize() to remove CR/LF and non-printable
+    chars; this function then wraps the remaining printable ASCII in single quotes
+    and escapes embedded single quotes via the standard '\\'' pattern.
+    """
     safe = s.replace("'", "'\\''")
     return f"'{safe}'"
 
