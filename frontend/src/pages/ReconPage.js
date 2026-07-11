@@ -46,6 +46,23 @@ export default function ReconPage() {
         },
     });
 
+    const downloadNmapXml = async (scanId, target) => {
+        try {
+            const res = await axios.get(`${API_URL}/api/scans/${scanId}/nmap-xml`, { responseType: 'blob' });
+            const url = URL.createObjectURL(res.data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pentestai-${target || scanId}.xml`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            toast.success('Raw nmap XML downloaded');
+        } catch (e) {
+            toast.error(e.response?.status === 404 ? 'No XML artifact available' : 'Download failed');
+        }
+    };
+
     const cancelActiveScan = async () => {
         if (!activeScanId) return;
         try {
@@ -178,9 +195,21 @@ export default function ReconPage() {
                         <CardHeader>
                             <div className="flex items-center justify-between gap-3">
                                 <CardTitle className="text-lg">{selectedScan ? `Results: ${selectedScan.target}` : 'Scan Results'}</CardTitle>
-                                {selectedScan?.status === 'completed' && (
-                                    <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
-                                )}
+                                <div className="flex items-center gap-2">
+                                    {selectedScan?.status === 'completed' && selectedScan?.results?.nmap_xml && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => downloadNmapXml(selectedScan.id, selectedScan.target)}
+                                            data-testid="download-nmap-xml-button"
+                                        >
+                                            <FileArchive className="w-4 h-4 mr-2" />Download XML
+                                        </Button>
+                                    )}
+                                    {selectedScan?.status === 'completed' && (
+                                        <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
+                                    )}
+                                </div>
                             </div>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-auto space-y-4">
