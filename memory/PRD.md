@@ -38,6 +38,11 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
 - ✅ Frontend SARIF download button on each report card.
 
+### v1.7 (Feb 2026) — Raw nmap XML evidence export
+- ✅ **`GET /api/scans/{id}/nmap-xml`** streams the raw nmap XML stored at `scan.results.nmap_xml` as `application/xml` with `Content-Disposition: attachment; filename="pentestai-scan-{scan_id}.xml"`.
+- ✅ **Download XML button** on `ReconPage`, `VulnerabilitiesPage`, `NetworkPage` (`data-testid="download-nmap-xml-button"`) — appears only when scan is completed AND `results.nmap_xml` is present.
+- ✅ Verified: 11/11 pytest tests + 3/3 playwright pages (auth, cross-user 404, unauth 401 all covered).
+
 ### v1.6 (Feb 2026) — One-click "Launch in distro"
 - ✅ **`GET /api/distros/{id}/launch?target=&scan_id=`** returns a self-contained bash script for BackBox / Pentoo / DEFT / Kodachi pre-loaded with `PENTESTAI_TARGET` env var.
    - BackBox & Pentoo → Docker workflows (`docker run backbox/backbox:latest`, `gentoo/stage3:latest`)
