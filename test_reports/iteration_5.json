@@ -1,0 +1,51 @@
+{
+  "summary": "PentestAI v1.5 — SARIF 2.1 export + lifespan nmap self-heal fully verified. 9/9 new v1.5 tests pass + 26/26 v1.4 regression now passes (was 22/26 in iteration_4 due to missing nmap binary in container). Self-heal hook confirmed by removing nmap, restarting backend, and observing 'nmap installed successfully' in logs within 1.5s. Frontend Reports page renders PDF + SARIF buttons side-by-side and the SARIF button triggers a .sarif download with correct filename.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v15_features.py",
+    "/app/test_reports/pytest/v15_features.xml",
+    "/app/test_reports/pytest/v15_v14regress2.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py._ensure_nmap_installed() uses subprocess.run synchronously inside lifespan startup — this blocks the event loop for up to 120s during a cold install. Acceptable for ~1.5s install observed in this env, but worth noting that during the install window the server cannot accept HTTP traffic. Consider running it in a thread via asyncio.to_thread if install times grow.",
+    "sarif_service.build_sarif_for_scans() generates a SARIF doc per call and uses datetime.now(timezone.utc).isoformat() for endTimeUtc — this means each export call produces a slightly different timestamp even for the same scan. Minor; matches SARIF spec semantics for 'when this run was emitted' but could be misleading. Consider using scan completion timestamp instead.",
+    "sarif_service._iso() does not validate ISO format — if scan.created_at is a non-ISO string it will pass through unchanged. Low risk because all writers use isoformat(), but worth a defensive parse.",
+    "routers/scans.py:174-175 — `import json` inside the function body (twice, also in /summary route). Move to module top.",
+    "routers/reports.py:84-86 — same `import json` inside function. Move to module top.",
+    "Frontend ReportsPage.js downloadSarif() does no auth handling — relies on axios interceptor for Authorization header. If token is missing the user sees a generic 'Failed to export SARIF' toast. Same pattern as PDF download so consistent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v15_features.py (created — 9 tests covering SARIF endpoints, severity mapping, security-severity CVSS, rules dedup, runtime nmap check, version)",
+    "/app/backend/tests/test_v14_distros.py (updated stale version assertion 1.4.0 -> startswith('1.'))",
+    "/app/backend/tests/test_v14_features.py (updated stale version assertion 1.4.0 -> startswith('1.'))"
+  ],
+  "success_rate": {
+    "backend": "100% — 9/9 v1.5 + 26/26 v1.4 regression. Prior iterations (v1.2, v1.3) also all pass (verified 39 tests passed before stale-version failure was hit).",
+    "frontend": "100% — PDF and SARIF buttons render, SARIF download triggers .sarif file with correct Content-Disposition."
+  },
+  "test_credentials": "Dynamic POST /api/auth/register (v15_<ts>_<hex>@test.com / password123, v15ui_<ts>@test.com / password123).",
+  "seed_data_creation": "Each test run registers 1 fresh user + creates 1-3 scans (vuln+recon @ 192.0.2.1 with preset=fast → quick mock-vuln results) + 1 report.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.5 complete. Five pytest files now: backend_test.py (legacy), test_scans_v12.py, test_v13_features.py, test_v14_features.py, test_v14_distros.py, test_v15_features.py. Run with: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests/ -v`. Two stale version assertions in test_v14_distros.py and test_v14_features.py were updated to use startswith('1.') so future bumps won't break them. The lifespan self-heal hook works — verified by removing nmap with apt-get remove and restarting backend; nmap was reinstalled in ~1.5s. nmap is currently installed at /usr/bin/nmap (7.93).",
+  "rca of the issue": "N/A — no code bugs found. Only test-data drift fix: hardcoded version assertion in legacy v1.4 tests. Iteration_4's 4 failing tests (nmap-binary-missing) are now resolved by the lifespan self-heal hook (verified end-to-end).",
+  "v15_verification_details": {
+    "self_heal_hook": "Verified — `apt-get remove -y nmap && sudo supervisorctl restart backend` triggered _ensure_nmap_installed() which reinstalled nmap. Log shows 'nmap not found — attempting apt-get install (one-time, ~15s)' then 'nmap installed successfully' in 1.5s.",
+    "runtime_nmap_check": "Verified — nmap_service, vuln_service, network_service do NOT define NMAP_AVAILABLE module-level; all use _nmap_available() function called at scan-execute time.",
+    "sarif_scan_endpoint": "GET /api/scans/{id}/sarif returns Content-Type application/sarif+json, body starts with '{', $schema=sarif-schema-2.1.0.json, version=2.1.0, runs[0].tool.driver.name='PentestAI', has rules + results. 400 when scan not completed, 401/403 without auth.",
+    "sarif_report_endpoint": "GET /api/reports/{id}/sarif aggregates scans into runs[]; with 2 scans → runs.length == 2; Content-Disposition filename ends in .sarif.",
+    "severity_mapping": "critical/high → error, medium → warning, low → note, info → none. Verified end-to-end via unit test against sarif_service.build_sarif_for_scans().",
+    "security_severity": "CVSS numeric string ('9.8') used when vuln.cvss present; fallback per severity (critical=9.5, high=8.0, medium=5.5, low=3.0, info=1.0). All verified.",
+    "frontend_buttons": "Both data-testid='download-pdf-{id}' and data-testid='download-sarif-{id}' render side-by-side; SARIF click downloads pentestai-report-{id}.sarif.",
+    "root_version": "GET /api/ returns {'version': '1.5.0'}."
+  }
+}

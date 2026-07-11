@@ -1,0 +1,37 @@
+{
+  "summary": "PentestAI v1.2 fully verified. Backend: 25/25 pytest tests pass (5 new v1.2 + 20 legacy regression). Async scan flow works — POST /api/scans returns immediately with status='running' progress=0 in <5s, GET /api/scans/{id} reflects progress 0->100 with stage strings, status transitions to 'completed'. Vuln scans against scanme.nmap.org return scan_engine='nmap+http' with 7+ vulnerabilities (sources nmap-nse, http-probe, tls-probe), risk_score 0-10, owasp_top10_hits non-empty (e.g. A05 Security Misconfiguration). Network scans return scan_engine='nmap', alive_hosts non-empty, total_open_ports>=1. Recon regression still scan_engine='nmap'. Frontend: Vulnerabilities, Network, and Recon pages all show ScanProgress with data-testid='scan-progress' + 'scan-progress-percent' during scanning; progress hides on completion; risk-score/owasp-hits/vulnerability-{i} cards render on Vulnerabilities; network-summary/alive-hosts-card/anomalies-card/host-{ip} render on Network. PDF download works for new vuln scans. MFA full lifecycle still works.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_scans_v12.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/v12_results.xml",
+    "/app/test_reports/pytest/legacy_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "vuln_service._ssl_cert_blocking uses datetime.utcnow() (deprecated in Py3.12+) — switch to datetime.now(timezone.utc) for consistency.",
+    "server.py is now ~690 lines (very close to the 700-line split threshold). Consider extracting auth/MFA, scans, reports, chat into separate routers for maintainability before adding more features.",
+    "asyncio.create_task(_execute_scan(...)) in POST /api/scans is fire-and-forget; if the FastAPI worker is killed mid-scan the scan is stuck in 'running' forever with no janitor. Consider a startup hook that marks orphaned 'running' scans as 'failed'.",
+    "vuln_service._http_probe_blocking calls requests.get(..., verify=False) which silently disables TLS verification (and emits an InsecureRequestWarning). Acceptable for a pentest tool but should be explicit / suppress warnings.",
+    "network_service ping sweep falls back to treating single host as alive when nmap discovery returns nothing (line 100-102) — good defensive behavior but should be logged so users understand discovery actually failed in restricted containers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_scans_v12.py (created — 5 v1.2 tests for async scans + vuln/network/recon engines + PDF regression)",
+    "/app/backend/tests/backend_test.py (updated TestReconScan and TestReports.test_create_scan_for_report to poll for async completion — needed because v1.2 made POST /api/scans return immediately)"
+  ],
+  "success_rate": {"backend": "100% (25/25)", "frontend": "100% (3/3 pages: vuln, network, recon all complete end-to-end)"},
+  "test_credentials": "Dynamic registration via /api/auth/register; test users: agent_v12_<ts>@test.com / password123, e2e_<ts>@test.com / password123.",
+  "seed_data_creation": "Each test run registers a fresh user and creates 2-4 scans + 1 report. No cleanup performed (data isolated per user).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.2 verified end-to-end. Two pytest files now exist: backend_test.py (legacy regression, polls async) and test_scans_v12.py (v1.2 async + real engines). nmap binary still required at /usr/bin/nmap for non-mock engines (was present this iteration). Container is restricted to TCP connect (-sT) and -PS for discovery — code already uses these. Vuln scan against scanme.nmap.org takes ~80-100s, network scan ~10-15s, recon ~5-10s. Frontend route is /recon (NOT /reconnaissance — sidebar label says Reconnaissance but path is /recon). Vulnerabilities and Network use /vulnerabilities and /network paths. Auto-login via localStorage 'token' key works on page navigation. EMERGENT_LLM_KEY configured; SHODAN_API_KEY not configured (graceful unconfigured path).",
+  "rca of the issue": "No issues found. All v1.2 acceptance criteria from review_request met. Legacy v1.1 recon test failed with 'unexpected engine None' on first run because v1.2 changed POST /api/scans to async (no longer waits for results) — fixed by adding polling loop in legacy test."
+}
