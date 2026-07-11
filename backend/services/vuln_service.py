@@ -1,7 +1,6 @@
 """Vulnerability scanning: nmap NSE vuln scripts + HTTP probe + NVD CVE enrichment."""
 import asyncio
 import logging
-import shutil
 import socket
 import ssl
 from datetime import datetime, timezone
@@ -9,36 +8,22 @@ from urllib.parse import urlparse
 
 import requests
 
-from services import nvd_service
+from services import nmap_runner, nvd_service
 
 logger = logging.getLogger(__name__)
 
-
-def _nmap_available() -> bool:
-    return shutil.which("nmap") is not None
-
-
-try:
-    import nmap
-except ImportError:
-    nmap = None
-
-
 SECURITY_HEADERS = {
     "strict-transport-security": ("Missing HSTS — enforce HTTPS via Strict-Transport-Security header.", "medium"),
-    "content-security-policy": ("Missing CSP — implement a Content-Security-Policy to mitigate XSS.", "medium"),
-    "x-frame-options": ("Missing X-Frame-Options — pages may be clickjacked via iframe embedding.", "low"),
-    "x-content-type-options": ("Missing X-Content-Type-Options — set to 'nosniff' to prevent MIME sniffing.", "low"),
-    "referrer-policy": ("Missing Referrer-Policy — leak of referrer URL data possible.", "low"),
+    "content-security-policy": ("Missing CSP — implement Content-Security-Policy to mitigate XSS.", "medium"),
+    "x-frame-options": ("Missing X-Frame-Options — pages may be clickjacked.", "low"),
+    "x-content-type-options": ("Missing X-Content-Type-Options — set to 'nosniff'.", "low"),
+    "referrer-policy": ("Missing Referrer-Policy — potential referrer URL leak.", "low"),
     "permissions-policy": ("Missing Permissions-Policy — restrict browser feature access.", "low"),
 }
 
 
 async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
-    """Run vulnerability scan combining nmap NSE vuln scripts and HTTP probe.
-
-    Reports progress via `progress_cb(percent: int, stage: str)` if provided.
-    """
+    """Combines nmap NSE vuln scripts, HTTP probe, TLS check, and NVD enrichment."""
     options = options or {}
     progress_cb = options.get("progress_cb")
     nmap_args = options.get("nmap_args", "-sT -sV -T4 --top-ports 100 -Pn --script vuln --host-timeout 90s")
@@ -48,38 +33,41 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
     vulns: list[dict] = []
     nmap_summary: dict = {}
     http_summary: dict = {}
+    raw_xml = ""
 
     if progress_cb:
         await progress_cb(10, "Resolving target")
 
-    # 1. nmap NSE vuln scan (real CVE-aware scripts)
-    if _nmap_available() and nmap:
+    if nmap_runner.is_available():
         if progress_cb:
             await progress_cb(20, "Running nmap vulnerability scripts")
-        try:
-            nmap_summary, nmap_vulns = await asyncio.to_thread(_nmap_vuln_blocking, host, nmap_args)
+        run = await nmap_runner.run(host, nmap_args)
+        raw_xml = run.raw_xml
+        if run.error and not run.hosts:
+            nmap_summary = {"error": run.error}
+        else:
+            nmap_summary, nmap_vulns = _extract_nmap_findings(run.hosts)
             vulns.extend(nmap_vulns)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("nmap vuln scan failed for %s: %s", host, e)
-            nmap_summary = {"error": str(e)}
     else:
         nmap_summary = {"error": "nmap binary not installed"}
 
     if progress_cb:
         await progress_cb(70, "Probing HTTP endpoints")
 
-    # 2. HTTP probe (only if URL or web-like target)
     try:
-        http_summary, http_vulns = await asyncio.to_thread(_http_probe_blocking, target if is_url else f"http://{host}")
+        http_summary, http_vulns = await asyncio.to_thread(
+            _http_probe_blocking, target if is_url else f"http://{host}"
+        )
         vulns.extend(http_vulns)
     except Exception as e:  # noqa: BLE001
         logger.warning("http probe failed for %s: %s", target, e)
         http_summary = {"error": str(e)}
 
-    # 3. SSL cert check if HTTPS
     if target.startswith("https://"):
         try:
-            cert_info, cert_vulns = await asyncio.to_thread(_ssl_cert_blocking, host, urlparse(target).port or 443)
+            cert_info, cert_vulns = await asyncio.to_thread(
+                _ssl_cert_blocking, host, urlparse(target).port or 443
+            )
             http_summary["ssl"] = cert_info
             vulns.extend(cert_vulns)
         except Exception as e:  # noqa: BLE001
@@ -88,10 +76,8 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
     if progress_cb:
         await progress_cb(85, "Enriching findings via NVD")
 
-    # 4. NVD CVE enrichment from nmap-detected service versions
     try:
-        enrich_ports = nmap_summary.get("ports") or []
-        cve_findings = await nvd_service.enrich_ports(enrich_ports)
+        cve_findings = await nvd_service.enrich_ports(nmap_summary.get("ports") or [])
         vulns.extend(cve_findings)
     except Exception as e:  # noqa: BLE001
         logger.warning("NVD enrichment failed: %s", e)
@@ -100,8 +86,6 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
         await progress_cb(95, "Aggregating findings")
 
     severities = [v["severity"] for v in vulns]
-    risk_score = _risk_score(severities)
-
     return {
         "target": target,
         "scan_type": "vulnerability",
@@ -109,10 +93,9 @@ async def run_vuln_scan(target: str, options: dict | None = None) -> dict:
         "vulnerabilities": vulns,
         "nmap_summary": nmap_summary,
         "http_summary": http_summary,
-        "risk_score": risk_score,
-        "compliance": {
-            "owasp_top10_hits": _owasp_hits(vulns),
-        },
+        "risk_score": _risk_score(severities),
+        "compliance": {"owasp_top10_hits": _owasp_hits(vulns)},
+        "nmap_xml": raw_xml,
     }
 
 
@@ -122,44 +105,33 @@ def _extract_host(target: str) -> str:
     return target.split("/")[0]
 
 
-def _nmap_vuln_blocking(host: str, args: str):
-    scanner = nmap.PortScanner()
-    scanner.scan(hosts=host, arguments=args)
-
-    vulns: list[dict] = []
-    summary = {"hosts_scanned": 0, "ports": []}
-    for h in scanner.all_hosts():
-        summary["hosts_scanned"] += 1
-        for proto in scanner[h].all_protocols():
-            for port in scanner[h][proto]:
-                info = scanner[h][proto][port]
-                summary["ports"].append({
-                    "port": port,
-                    "service": info.get("name"),
-                    "product": info.get("product", ""),
-                    "version": info.get("version", ""),
+def _extract_nmap_findings(hosts: list[dict]):
+    ports_summary = []
+    vulns = []
+    for h in hosts:
+        for p in h.get("ports", []):
+            ports_summary.append({
+                "port": p["port"],
+                "service": p["service"],
+                "product": p.get("product") or "",
+                "version": p.get("version") or "",
+            })
+            for script_id, output in p.get("scripts", []):
+                vulns.append({
+                    "id": f"NSE-{script_id}-port{p['port']}",
+                    "severity": _severity_from_output(output),
+                    "description": f"[port {p['port']}/{p['service']}] {script_id}: {_first_line(output)}",
+                    "source": "nmap-nse",
+                    "remediation": "Patch the affected service to the latest version.",
                 })
-                # NSE vuln script output is in info['script'] dict
-                scripts = info.get("script", {})
-                for script_id, output in scripts.items():
-                    sev = _severity_from_output(output)
-                    vulns.append({
-                        "id": f"NSE-{script_id}-port{port}",
-                        "severity": sev,
-                        "description": f"[port {port}/{info.get('name','?')}] {script_id}: {_first_line(output)}",
-                        "source": "nmap-nse",
-                        "remediation": "Patch the affected service to the latest version.",
-                    })
-    return summary, vulns
+    return {"hosts_scanned": len(hosts), "ports": ports_summary}, vulns
 
 
 def _severity_from_output(output: str) -> str:
     o = (output or "").upper()
-    if "VULNERABLE" in o and "STATE: VULNERABLE" in o:
+    if "STATE: VULNERABLE" in o:
         return "high"
-    if "VULNERABLE" in o:
-        return "medium"
-    if "LIKELY VULNERABLE" in o:
+    if "VULNERABLE" in o or "LIKELY VULNERABLE" in o:
         return "medium"
     return "info"
 
@@ -167,26 +139,24 @@ def _severity_from_output(output: str) -> str:
 def _first_line(text: str) -> str:
     if not text:
         return ""
-    line = text.strip().splitlines()[0]
-    return line[:200]
+    return text.strip().splitlines()[0][:200]
 
 
 def _http_probe_blocking(url: str):
     vulns: list[dict] = []
-    summary: dict = {"url": url}
-
     try:
         resp = requests.get(url, timeout=10, allow_redirects=True, verify=False)
     except Exception as e:
         return {"error": f"http request failed: {e}"}, []
 
-    summary["status_code"] = resp.status_code
-    summary["server"] = resp.headers.get("Server", "n/a")
-    summary["powered_by"] = resp.headers.get("X-Powered-By")
-    summary["final_url"] = resp.url
-    summary["headers_present"] = list(resp.headers.keys())
-
-    # Security headers check
+    summary = {
+        "url": url,
+        "status_code": resp.status_code,
+        "server": resp.headers.get("Server", "n/a"),
+        "powered_by": resp.headers.get("X-Powered-By"),
+        "final_url": resp.url,
+        "headers_present": list(resp.headers.keys()),
+    }
     lower_headers = {k.lower(): v for k, v in resp.headers.items()}
     for header, (msg, sev) in SECURITY_HEADERS.items():
         if header not in lower_headers:
@@ -197,50 +167,32 @@ def _http_probe_blocking(url: str):
                 "source": "http-probe",
                 "remediation": f"Add the `{header}` response header.",
             })
-
-    # Server version disclosure
     if summary["server"] and any(c.isdigit() for c in summary["server"]):
         vulns.append({
             "id": "HTTP-SERVER-DISCLOSURE",
             "severity": "low",
-            "description": f"Server version disclosed in response headers: {summary['server']}",
+            "description": f"Server version disclosed: {summary['server']}",
             "source": "http-probe",
-            "remediation": "Hide the Server header version (e.g. nginx server_tokens off).",
+            "remediation": "Hide the Server header version.",
         })
-
     if summary.get("powered_by"):
         vulns.append({
             "id": "HTTP-XPOWEREDBY",
             "severity": "low",
-            "description": f"X-Powered-By header reveals tech stack: {summary['powered_by']}",
+            "description": f"X-Powered-By reveals stack: {summary['powered_by']}",
             "source": "http-probe",
             "remediation": "Remove the X-Powered-By header.",
         })
-
-    # robots.txt presence (informational)
-    try:
-        robots = requests.get(_join_url(url, "/robots.txt"), timeout=5, verify=False)
-        summary["robots_txt"] = robots.status_code == 200
-    except Exception:
-        summary["robots_txt"] = False
-
-    # Insecure cookie flags
     for c in resp.cookies:
         if not c.secure:
             vulns.append({
                 "id": f"HTTP-COOKIE-NOSECURE-{c.name}",
                 "severity": "low",
-                "description": f"Cookie '{c.name}' is set without the Secure flag.",
+                "description": f"Cookie '{c.name}' missing Secure flag.",
                 "source": "http-probe",
                 "remediation": "Set Secure flag on session cookies.",
             })
-
     return summary, vulns
-
-
-def _join_url(base: str, path: str) -> str:
-    p = urlparse(base)
-    return f"{p.scheme}://{p.netloc}{path}"
 
 
 def _ssl_cert_blocking(host: str, port: int):
@@ -251,19 +203,16 @@ def _ssl_cert_blocking(host: str, port: int):
     with socket.create_connection((host, port), timeout=8) as sock:
         with ctx.wrap_socket(sock, server_hostname=host) as ssock:
             cert = ssock.getpeercert(binary_form=False) or {}
-            cipher = ssock.cipher()
             tls_version = ssock.version()
-
-    info = {"tls_version": tls_version, "cipher": cipher}
+    info = {"tls_version": tls_version}
     if tls_version in ("TLSv1", "TLSv1.1", "SSLv3", "SSLv2"):
         vulns.append({
             "id": "TLS-OUTDATED",
             "severity": "high",
             "description": f"Server negotiates outdated protocol: {tls_version}",
             "source": "tls-probe",
-            "remediation": "Disable TLS < 1.2 and prefer TLS 1.3.",
+            "remediation": "Disable TLS < 1.2; prefer TLS 1.3.",
         })
-
     not_after = cert.get("notAfter")
     if not_after:
         try:
@@ -272,16 +221,14 @@ def _ssl_cert_blocking(host: str, port: int):
             info["days_until_expiry"] = days_left
             if days_left < 0:
                 vulns.append({
-                    "id": "TLS-EXPIRED-CERT",
-                    "severity": "critical",
+                    "id": "TLS-EXPIRED-CERT", "severity": "critical",
                     "description": f"Certificate expired on {not_after}",
                     "source": "tls-probe",
                     "remediation": "Renew the TLS certificate immediately.",
                 })
             elif days_left < 30:
                 vulns.append({
-                    "id": "TLS-CERT-EXPIRING",
-                    "severity": "medium",
+                    "id": "TLS-CERT-EXPIRING", "severity": "medium",
                     "description": f"Certificate expires in {days_left} days ({not_after}).",
                     "source": "tls-probe",
                     "remediation": "Renew the TLS certificate before expiry.",

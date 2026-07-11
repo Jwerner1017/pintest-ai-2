@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { Search, Play, Loader2, Globe, Clock, ChevronRight, Server, AlertTriangle, Satellite } from 'lucide-react';
+import { Search, Play, Loader2, Globe, Clock, ChevronRight, Server, AlertTriangle, Satellite, FileArchive } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';

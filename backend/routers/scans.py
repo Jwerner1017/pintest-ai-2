@@ -162,6 +162,22 @@ async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_use
     return {"message": "Scan deleted"}
 
 
+@router.get("/scans/{scan_id}/nmap-xml")
+async def download_nmap_xml(scan_id: str, current_user: dict = Depends(get_current_user)):
+    """Download the raw nmap XML output as an evidence artifact (pairs with DEFT workflow)."""
+    scan = await db.scans.find_one({"id": scan_id, "user_id": current_user["id"]}, {"_id": 0})
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    xml = (scan.get("results") or {}).get("nmap_xml") or ""
+    if not xml:
+        raise HTTPException(status_code=404, detail="No nmap XML artifact available for this scan")
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="pentestai-scan-{scan_id}.xml"'},
+    )
+
+
 @router.get("/scans/{scan_id}/sarif")
 async def scan_sarif(scan_id: str, current_user: dict = Depends(get_current_user)):
     """Download scan results as SARIF 2.1 JSON (consumable by GitHub Code Scanning, etc.)."""
