@@ -151,8 +151,8 @@ def test_root_version(auth_headers):
     r = requests.get(f"{API}/", timeout=10)
     assert r.status_code == 200
     v = r.json().get("version", "")
-    # Spec says we did NOT bump for v1.6, so still 1.5.0
-    assert v == "1.5.0", f"expected 1.5.0, got {v!r}"
+    # v1.8 bumped the API version
+    assert v == "1.8.0", f"expected 1.8.0, got {v!r}"
 
 
 # ===== Regression: distros list still 4 =====

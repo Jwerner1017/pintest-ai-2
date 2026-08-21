@@ -38,6 +38,13 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
 - ✅ Frontend SARIF download button on each report card.
 
+### v1.8 (Feb 2026) — Cron-style scan scheduler + non-blocking startup
+- ✅ **Scheduler CRUD** — `POST/GET/PATCH/DELETE /api/schedules` with 5-field cron validation via `croniter`, per-user isolation, invalid cron/scan_type → 400.
+- ✅ **Background dispatcher** — `services/scheduler.py` runs a 20-second asyncio tick loop that fires `enqueue_scheduled_scan()` for any enabled schedule whose `next_run_at <= now`, advances the cron cursor, and stamps `last_run_at` + `last_scan_id`. Fault-tolerant: bad schedules disable themselves instead of hot-looping.
+- ✅ **Frontend `/scheduler`** — new page with cron templates (15min/hourly/6h/daily/weekly), scan-type + preset selectors, pause/resume switch, delete, next/last-run timestamps, and links back to the scan pages.
+- ✅ **Non-blocking startup** — `_ensure_nmap_installed()` now runs under `await asyncio.to_thread(...)` so the event loop is not blocked during the (~15s) apt install on cold containers.
+- ✅ 12/12 new pytest tests including a live 60-90s dispatch verification; 21/22 regression pass (only the stale v1.5.0 version assertion, now bumped to 1.8.0).
+
 ### v1.7 (Feb 2026) — Raw nmap XML evidence export
 - ✅ **`GET /api/scans/{id}/nmap-xml`** streams the raw nmap XML stored at `scan.results.nmap_xml` as `application/xml` with `Content-Disposition: attachment; filename="pentestai-scan-{scan_id}.xml"`.
 - ✅ **Download XML button** on `ReconPage`, `VulnerabilitiesPage`, `NetworkPage` (`data-testid="download-nmap-xml-button"`) — appears only when scan is completed AND `results.nmap_xml` is present.

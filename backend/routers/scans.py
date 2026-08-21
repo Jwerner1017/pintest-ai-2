@@ -64,6 +64,40 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
     return _scan_resp(scan_doc)
 
 
+async def enqueue_scheduled_scan(user_id: str, scan_type: str, target: str, options: dict, source: dict | None = None) -> str:
+    """Insert a scan doc and kick off _execute_scan without going through the HTTP path.
+
+    Used by the schedule service. Returns the new scan_id.
+    """
+    scan_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    scan_doc = {
+        "id": scan_id,
+        "user_id": user_id,
+        "scan_type": scan_type,
+        "target": target,
+        "options": options or {},
+        "status": "running",
+        "progress": 0,
+        "stage": "Queued (scheduled)",
+        "results": None,
+        "created_at": now,
+        "source": source or {"trigger": "schedule"},
+    }
+    await db.scans.insert_one(scan_doc)
+    await db.activity_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "action": f"Scheduled {scan_type} scan triggered",
+        "target": target,
+        "created_at": now,
+    })
+    task = asyncio.create_task(_execute_scan(scan_id, scan_type, target, options or {}))
+    _active_tasks[scan_id] = task
+    task.add_done_callback(lambda _t: _active_tasks.pop(scan_id, None))
+    return scan_id
+
+
 async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict):
     async def progress_cb(percent: int, stage: str):
         await db.scans.update_one(

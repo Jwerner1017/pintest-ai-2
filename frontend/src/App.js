@@ -14,6 +14,7 @@ import TerminalPage from './pages/TerminalPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import ToolkitsPage from './pages/ToolkitsPage';
+import SchedulerPage from './pages/SchedulerPage';
 import './App.css';
 
 function AppRoutes() {
@@ -29,6 +30,7 @@ function AppRoutes() {
             <Route path="/terminal" element={<ProtectedRoute><MainLayout><TerminalPage /></MainLayout></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><MainLayout><ReportsPage /></MainLayout></ProtectedRoute>} />
             <Route path="/toolkits" element={<ProtectedRoute><MainLayout><ToolkitsPage /></MainLayout></ProtectedRoute>} />
+            <Route path="/scheduler" element={<ProtectedRoute><MainLayout><SchedulerPage /></MainLayout></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><MainLayout><SettingsPage /></MainLayout></ProtectedRoute>} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
