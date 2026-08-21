@@ -10,6 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
+import {
+    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { Header } from '../components/layout/Header';
 import { PresetSelector } from '../components/scans/PresetSelector';
 import { API_URL } from '../lib/api';
@@ -37,6 +41,7 @@ export default function SchedulerPage() {
     const [schedules, setSchedules] = useState([]);
     const [loading, setLoading] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState(null);
 
     // Form
     const [name, setName] = useState('');
@@ -95,6 +100,7 @@ export default function SchedulerPage() {
         try {
             await axios.delete(`${API_URL}/api/schedules/${id}`);
             toast.success('Schedule deleted');
+            setPendingDelete(null);
             fetchSchedules();
         } catch (e) {
             toast.error('Failed to delete schedule');
@@ -223,7 +229,7 @@ export default function SchedulerPage() {
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
-                                                    onClick={() => deleteSchedule(s.id)}
+                                                    onClick={() => setPendingDelete(s)}
                                                     data-testid={`schedule-delete-${s.id}`}
                                                     title="Delete schedule"
                                                 >
@@ -263,6 +269,33 @@ export default function SchedulerPage() {
                     )}
                 </div>
             </div>
+
+            <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+                <AlertDialogContent data-testid="delete-schedule-dialog">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete recurring schedule?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {pendingDelete && (
+                                <>
+                                    This will permanently stop and remove <span className="font-medium text-foreground">{pendingDelete.name}</span>
+                                    {' '}(<span className="font-mono">{pendingDelete.cron}</span> on <span className="font-mono">{pendingDelete.target}</span>).
+                                    Existing scan history is not affected.
+                                </>
+                            )}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel data-testid="delete-schedule-cancel">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => pendingDelete && deleteSchedule(pendingDelete.id)}
+                            className="bg-red-500 hover:bg-red-600"
+                            data-testid="delete-schedule-confirm"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

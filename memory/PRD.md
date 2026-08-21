@@ -38,6 +38,11 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
 - ✅ Frontend SARIF download button on each report card.
 
+### v1.9 (Feb 2026) — Hands-free Terminal + Safer Scheduler Delete
+- ✅ **Terminal rewritten** as a real CLI over the async scan endpoints. Commands: `help`, `clear`, `whoami`, `scans`, `scan <target> [preset]`, `vuln <target> [preset]`, `netscan <cidr> [preset]`, `cancel <prefix>`, `summary <prefix>`, `xml <prefix>`, `ai <query>`. Includes ArrowUp/ArrowDown history recall, auto-scroll, scan_id prefix resolution, streaming progress lines, and direct blob download for XML.
+- ✅ **Scheduler delete confirmation** — clicking delete now opens a Radix AlertDialog (`data-testid='delete-schedule-dialog'`) that shows the schedule name/cron/target before the destructive action.
+- ✅ 8/8 new terminal backend endpoint tests, 23/23 v17+v18 regression, full Playwright flow (scan lifecycle to completion + AlertDialog cancel/confirm).
+
 ### v1.8 (Feb 2026) — Cron-style scan scheduler + non-blocking startup
 - ✅ **Scheduler CRUD** — `POST/GET/PATCH/DELETE /api/schedules` with 5-field cron validation via `croniter`, per-user isolation, invalid cron/scan_type → 400.
 - ✅ **Background dispatcher** — `services/scheduler.py` runs a 20-second asyncio tick loop that fires `enqueue_scheduled_scan()` for any enabled schedule whose `next_run_at <= now`, advances the cron cursor, and stamps `last_run_at` + `last_scan_id`. Fault-tolerant: bad schedules disable themselves instead of hot-looping.
