@@ -13,6 +13,7 @@ import { ScanProgress } from '../components/scans/ScanProgress';
 import { AIScanSummary } from '../components/scans/AIScanSummary';
 import { PresetSelector } from '../components/scans/PresetSelector';
 import { DistroRecommendation } from '../components/scans/DistroRecommendation';
+import { AIRemediation } from '../components/scans/AIRemediation';
 import { useScanPolling } from '../hooks/useScanPolling';
 import { API_URL } from '../lib/api';
 
@@ -101,7 +102,7 @@ export default function VulnerabilitiesPage() {
     return (
         <div className="flex-1 flex flex-col" data-testid="vulnerabilities-page">
             <Header title="Vulnerability Assessment" subtitle="nmap NSE vuln scripts + HTTP probe" />
-            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+            <div className="grid flex-1 grid-cols-1 gap-6 overflow-y-auto p-4 sm:p-6 lg:grid-cols-3 lg:overflow-hidden">
                 <div className="space-y-4">
                     <Card className="border-border/40 bg-card/20" data-testid="vuln-scan-card">
                         <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Bug className="w-5 h-5 text-primary" />Vulnerability Scan</CardTitle></CardHeader>
@@ -191,18 +192,19 @@ export default function VulnerabilitiesPage() {
                             {vulnerabilities.length > 0 ? (
                                 <div className="space-y-3">
                                     {vulnerabilities.map((vuln, i) => (
-                                        <div key={i} className="p-4 bg-background/50 border border-border/20 space-y-2" data-testid={`vulnerability-${i}`}>
+                                        <div key={`${selectedScan?.id}-${vuln.id}-${i}`} className="p-4 bg-background/50 border border-border/20 space-y-3" data-testid={`vulnerability-${i}`}>
                                             <div className="flex items-start justify-between gap-2">
-                                                <span className="font-mono text-sm font-medium break-all">{vuln.id}</span>
-                                                <Badge className={SEV_CLASS[vuln.severity?.toLowerCase()] || SEV_CLASS.info}>{vuln.severity?.toUpperCase()}</Badge>
+                                                <span className="font-mono text-sm font-medium break-all" data-testid={`vulnerability-id-${i}`}>{vuln.id}</span>
+                                                <Badge className={SEV_CLASS[vuln.severity?.toLowerCase()] || SEV_CLASS.info} data-testid={`vulnerability-severity-${i}`}>{vuln.severity?.toUpperCase()}</Badge>
                                             </div>
-                                            <p className="text-sm">{vuln.description}</p>
-                                            {vuln.source && <p className="text-xs text-muted-foreground">Source: {vuln.source}</p>}
+                                            <p className="text-sm" data-testid={`vulnerability-description-${i}`}>{vuln.description}</p>
+                                            {vuln.source && <p className="text-xs text-muted-foreground" data-testid={`vulnerability-source-${i}`}>Source: {vuln.source}</p>}
                                             {vuln.remediation && (
-                                                <div className="p-2 bg-green-500/10 border border-green-500/20 text-xs">
-                                                    <span className="text-green-400 font-medium">Remediation: </span>{vuln.remediation}
+                                                <div className="p-2 bg-green-500/10 border border-green-500/20 text-xs" data-testid={`baseline-remediation-${i}`}>
+                                                    <span className="text-green-400 font-medium">Baseline guidance: </span>{vuln.remediation}
                                                 </div>
                                             )}
+                                            <AIRemediation scanId={selectedScan.id} findingIndex={i} finding={vuln} />
                                         </div>
                                     ))}
                                 </div>

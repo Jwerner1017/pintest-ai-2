@@ -61,7 +61,7 @@ async def lifespan(_app: FastAPI):
     client.close()
 
 
-app = FastAPI(title="PentestAI Platform", version="1.8.0", lifespan=lifespan)
+app = FastAPI(title="PentestAI Platform", version="2.0.0", lifespan=lifespan)
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
@@ -75,7 +75,7 @@ api_router.include_router(schedules.router)
 
 @api_router.get("/")
 async def root():
-    return {"message": "PentestAI Platform API", "version": "1.8.0"}
+    return {"message": "PentestAI Platform API", "version": "2.0.0"}
 
 
 app.include_router(api_router)

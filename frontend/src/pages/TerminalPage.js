@@ -7,6 +7,7 @@ import { Card } from '../components/ui/card';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Header } from '../components/layout/Header';
 import { API_URL } from '../lib/api';
+import { completionNeedsScanIds, getTerminalCompletions } from '../lib/terminalAutocomplete';
 
 const HELP_TEXT = `Available commands:
   help                          Show this help
@@ -19,7 +20,9 @@ const HELP_TEXT = `Available commands:
   cancel <scan_id_prefix>       Cancel a running scan (first 8 chars ok)
   summary <scan_id_prefix>      Generate AI executive summary
   xml <scan_id_prefix>          Download raw nmap XML
-  ai <query>                    Ask the Claude AI assistant`;
+  ai <query>                    Ask the Claude AI assistant
+
+Tab completes commands, scan ID prefixes, and preset names.`;
 
 const PRESETS = new Set(['fast', 'thorough', 'stealth']);
 
@@ -47,13 +50,16 @@ function formatScanResults(scan) {
 export default function TerminalPage() {
     const [input, setInput] = useState('');
     const [history, setHistory] = useState([
-        { type: 'system', content: 'PentestAI Terminal v1.9 — hands-free scanning' },
+        { type: 'system', content: 'PentestAI Terminal v2.0 — hands-free scanning' },
         { type: 'system', content: 'Type "help" for available commands.' },
     ]);
     const [loading, setLoading] = useState(false);
     const [cmdHistory, setCmdHistory] = useState([]);
     const [histIdx, setHistIdx] = useState(-1);
+    const [completionHint, setCompletionHint] = useState(null);
     const scrollAreaRef = useRef(null);
+    const completionRef = useRef(null);
+    const scanCacheRef = useRef({ loadedAt: 0, ids: [] });
 
     const push = (type, content) => setHistory(prev => [...prev, { type, content }]);
 
@@ -70,6 +76,7 @@ export default function TerminalPage() {
         try {
             const res = await axios.post(`${API_URL}/api/scans`, { scan_type: scanType, target, options: { preset: effectivePreset } });
             const scanId = res.data.id;
+            scanCacheRef.current = { loadedAt: Date.now(), ids: [scanId, ...scanCacheRef.current.ids] };
             push('output', `  scan_id=${scanId}`);
             // Poll every 2s up to ~5min.
             let lastStage = '';
@@ -127,6 +134,7 @@ export default function TerminalPage() {
         if (verb === 'scans') {
             try {
                 const { data } = await axios.get(`${API_URL}/api/scans`);
+                scanCacheRef.current = { loadedAt: Date.now(), ids: data.map((scan) => scan.id) };
                 if (!data.length) { push('output', '  (no scans yet)'); return; }
                 push('output', '  ID        TYPE      TARGET                       STATUS');
                 data.slice(0, 15).forEach(s => {
@@ -199,19 +207,68 @@ export default function TerminalPage() {
         if (!input.trim() || loading) return;
         handleCommand(input);
         setInput('');
+        setCompletionHint(null);
+        completionRef.current = null;
     };
 
-    const handleKeyDown = (e) => {
-        if (e.key === 'ArrowUp' && cmdHistory.length) {
+    const loadScanIds = async () => {
+        try {
+            const { data } = await axios.get(`${API_URL}/api/scans`);
+            const ids = data.map((scan) => scan.id);
+            scanCacheRef.current = { loadedAt: Date.now(), ids };
+            return ids;
+        } catch {
+            return scanCacheRef.current.ids;
+        }
+    };
+
+    const completeInput = async () => {
+        const previous = completionRef.current;
+        if (previous?.displayedValue === input && previous.matches.length > 1) {
+            const nextIndex = (previous.index + 1) % previous.matches.length;
+            const nextValue = `${previous.baseValue.slice(0, previous.replaceStart)}${previous.matches[nextIndex]}`;
+            completionRef.current = { ...previous, index: nextIndex, displayedValue: nextValue };
+            setInput(nextValue);
+            setCompletionHint(`${previous.kind}: ${previous.matches.join('  ')}`);
+            return;
+        }
+
+        const scanIds = completionNeedsScanIds(input) ? await loadScanIds() : [];
+        const result = getTerminalCompletions(input, scanIds);
+        if (!result.matches.length) {
+            completionRef.current = null;
+            setCompletionHint('No matching completion');
+            return;
+        }
+        const nextValue = `${input.slice(0, result.replaceStart)}${result.matches[0]}`;
+        completionRef.current = {
+            ...result,
+            baseValue: input,
+            displayedValue: nextValue,
+            index: 0,
+        };
+        setInput(nextValue);
+        setCompletionHint(result.matches.length > 1 ? `${result.kind}: ${result.matches.join('  ')}` : `${result.kind}: ${result.matches[0]}`);
+    };
+
+    const handleKeyDown = async (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            await completeInput();
+        } else if (e.key === 'ArrowUp' && cmdHistory.length) {
             e.preventDefault();
             const next = histIdx === -1 ? cmdHistory.length - 1 : Math.max(0, histIdx - 1);
             setHistIdx(next);
             setInput(cmdHistory[next] || '');
+            setCompletionHint(null);
+            completionRef.current = null;
         } else if (e.key === 'ArrowDown' && histIdx !== -1) {
             e.preventDefault();
             const next = histIdx + 1;
             if (next >= cmdHistory.length) { setHistIdx(-1); setInput(''); }
             else { setHistIdx(next); setInput(cmdHistory[next]); }
+            setCompletionHint(null);
+            completionRef.current = null;
         }
     };
 
@@ -234,30 +291,39 @@ export default function TerminalPage() {
                                 <div
                                     key={i}
                                     className={`whitespace-pre-wrap ${line.type === 'system' ? 'text-blue-400' : line.type === 'input' ? 'text-white' : line.type === 'output' ? 'text-green-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai' ? 'text-purple-400' : 'text-foreground'}`}
-                                    data-testid={`terminal-line-${line.type}`}
+                                    data-testid={`terminal-line-${i}-${line.type}`}
+                                    data-line-type={line.type}
                                 >
                                     {line.content}
                                 </div>
                             ))}
-                            {loading && <div className="text-muted-foreground animate-pulse">Working...</div>}
+                            {loading && <div className="text-muted-foreground animate-pulse" data-testid="terminal-working-indicator">Working...</div>}
                         </div>
                     </ScrollArea>
-                    <form onSubmit={handleSubmit} className="flex items-center gap-2 p-4 border-t border-border/20 bg-zinc-950">
-                        <span className="text-primary font-mono">$</span>
-                        <Input
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="e.g. scan 127.0.0.1 fast   |   ai list common ssh CVEs"
-                            className="flex-1 bg-transparent border-none focus-visible:ring-0 font-mono text-sm text-white"
-                            disabled={loading}
-                            data-testid="terminal-input"
-                            autoFocus
-                        />
-                        <Button type="submit" size="sm" disabled={loading || !input.trim()} data-testid="terminal-submit">
-                            <Send className="w-4 h-4" />
-                        </Button>
-                    </form>
+                    <div className="border-t border-border/20 bg-zinc-950">
+                        {completionHint && <div className="border-b border-border/10 px-10 py-1.5 font-mono text-xs text-cyan-300" data-testid="terminal-autocomplete-hint">{completionHint}</div>}
+                        <form onSubmit={handleSubmit} className="flex items-center gap-2 p-4">
+                            <span className="text-primary font-mono">$</span>
+                            <Input
+                                value={input}
+                                onChange={(e) => {
+                                    setInput(e.target.value);
+                                    setCompletionHint(null);
+                                    completionRef.current = null;
+                                }}
+                                onKeyDown={handleKeyDown}
+                                placeholder="e.g. scan 127.0.0.1 fast   |   ai list common ssh CVEs"
+                                className="flex-1 bg-transparent border-none focus-visible:ring-0 font-mono text-sm text-white"
+                                disabled={loading}
+                                data-testid="terminal-input"
+                                autoComplete="off"
+                                autoFocus
+                            />
+                            <Button type="submit" size="sm" disabled={loading || !input.trim()} data-testid="terminal-submit" title="Run command">
+                                <Send className="w-4 h-4" />
+                            </Button>
+                        </form>
+                    </div>
                 </Card>
             </div>
         </div>

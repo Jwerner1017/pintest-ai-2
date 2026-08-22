@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from core.db import db
-from core.models import ScanCreate, ScanResponse, ShodanRequest
+from core.models import RemediationResponse, ScanCreate, ScanResponse, ShodanRequest
 from core.security import get_current_user
-from services import nmap_service, vuln_service, network_service, shodan_service, presets as presets_service, distros as distros_service, sarif_service
+from services import distros as distros_service
+from services import network_service, nmap_service, presets as presets_service, remediation_service, sarif_service, shodan_service, vuln_service
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +293,62 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
         "generated_at": generated_at,
         "cached": False,
     }
+
+
+@router.post("/scans/{scan_id}/remediations/{finding_index}", response_model=RemediationResponse)
+async def ai_remediation(
+    scan_id: str,
+    finding_index: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate or return a cached DevOps-ready remediation plan for one finding."""
+    scan = await db.scans.find_one(
+        {"id": scan_id, "user_id": current_user["id"]},
+        {"_id": 0},
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Scan must be completed before generating remediation")
+
+    findings = (scan.get("results") or {}).get("vulnerabilities") or []
+    if finding_index < 0 or finding_index >= len(findings):
+        raise HTTPException(status_code=404, detail="Vulnerability finding not found")
+
+    finding = findings[finding_index]
+    cached = finding.get("ai_remediation")
+    if cached:
+        return RemediationResponse(
+            finding_index=finding_index,
+            finding_id=str(finding.get("id") or f"finding-{finding_index + 1}"),
+            remediation=cached["plan"],
+            model=cached["model"],
+            generated_at=cached["generated_at"],
+            cached=True,
+        )
+
+    try:
+        plan, model_name = await remediation_service.generate_remediation(scan_id, scan.get("target", ""), finding)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("remediation generation failed for scan %s finding %d", scan_id, finding_index)
+        raise HTTPException(status_code=502, detail="AI remediation generation failed") from exc
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    stored = {"plan": plan, "model": model_name, "generated_at": generated_at}
+    await db.scans.update_one(
+        {"id": scan_id, "user_id": current_user["id"]},
+        {"$set": {f"results.vulnerabilities.{finding_index}.ai_remediation": stored}},
+    )
+    return RemediationResponse(
+        finding_index=finding_index,
+        finding_id=str(finding.get("id") or f"finding-{finding_index + 1}"),
+        remediation=plan,
+        model=model_name,
+        generated_at=generated_at,
+        cached=False,
+    )
 
 
 # ==================== Presets ====================

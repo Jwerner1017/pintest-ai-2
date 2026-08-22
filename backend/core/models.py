@@ -1,6 +1,6 @@
 """Pydantic request/response models shared across routers."""
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -65,6 +65,30 @@ class ScanResponse(BaseModel):
     progress: int = 0
     stage: Optional[str] = None
     results: Optional[dict] = None
+
+
+class RemediationStep(BaseModel):
+    title: str
+    action: str
+    details: str
+    commands: List[str] = Field(default_factory=list)
+
+
+class RemediationPlan(BaseModel):
+    summary: str
+    priority: str
+    steps: List[RemediationStep]
+    validation: List[str] = Field(default_factory=list)
+    rollback: List[str] = Field(default_factory=list)
+
+
+class RemediationResponse(BaseModel):
+    finding_index: int
+    finding_id: str
+    remediation: RemediationPlan
+    model: str
+    generated_at: str
+    cached: bool
 
 
 class DashboardStats(BaseModel):

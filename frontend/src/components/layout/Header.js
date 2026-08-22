@@ -22,12 +22,12 @@ export function Header({ title, subtitle }) {
     };
 
     return (
-        <header className="bg-background/80 backdrop-blur-md border-b border-border/40 sticky top-0 z-50 px-6 py-4 flex items-center justify-between" data-testid="header">
-            <div>
-                <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-                {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+        <header className="sticky top-0 z-50 flex min-w-0 items-center justify-between gap-3 border-b border-border/40 bg-background/80 py-4 pl-16 pr-3 backdrop-blur-md sm:pr-4 md:px-6" data-testid="header">
+            <div className="min-w-0">
+                <h1 className="truncate text-xl font-bold sm:text-2xl" data-testid="header-title">{title}</h1>
+                {subtitle && <p className="truncate text-xs text-muted-foreground sm:text-sm" data-testid="header-subtitle">{subtitle}</p>}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2 md:gap-4">
                 <div className="relative hidden md:block">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input placeholder="Search targets, scans..." className="pl-9 w-64 bg-background" data-testid="header-search" />
