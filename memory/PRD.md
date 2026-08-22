@@ -21,6 +21,8 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - Configurable scan presets (fast / thorough / stealth)
 - NVD CVE enrichment for service-version detections
 - AI-generated executive summaries (with model + timestamp audit)
+- Claude-generated, finding-specific DevOps remediation plans with cached audit metadata
+- Terminal Tab completion for commands, scan ID prefixes, and scan presets
 - Specialised toolkit recommendations (DEFT/BackBox/Kodachi/Pentoo)
 - SARIF 2.1 export for CI/CD pipeline integration
 - Self-healing container (auto-installs nmap on startup if missing)
@@ -32,11 +34,38 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - **v1.3** Server split into routers, AI summariser, cancellation + orphan janitor
 - **v1.4** NVD CVE enrichment, scan presets, lifespan, AI summary metadata, DEFT/BackBox/Kodachi/Pentoo distros
 
+### v2.0 (Aug 2026) — AI Remediation + Terminal Autocomplete
+- ✅ **Finding-specific Claude remediation** — `POST /api/scans/{scan_id}/remediations/{finding_index}` validates scan ownership/completion, generates a structured defensive plan, and persists it under the immutable completed finding for cached reuse.
+- ✅ **DevOps-ready plans** — every plan includes priority, summary, 3-6 ordered implementation steps, optional safe commands, validation checks, rollback guidance, model, and generation timestamp.
+- ✅ **Remediation UI** — each vulnerability can generate, expand/collapse, and copy its plan as Markdown; cached plans render directly from scan results.
+- ✅ **Terminal Tab autocomplete** — command verbs, `fast|thorough|stealth` preset names, and current-user scan ID prefixes complete in place; repeated Tab cycles ambiguous command matches.
+- ✅ **Mobile navigation fix** — persistent desktop sidebar becomes an off-canvas mobile overlay, preserving the full content width without horizontal overflow.
+- ✅ **JWT configuration hardening** — removed the fallback JWT secret; backend now fails fast when `JWT_SECRET` is missing.
+- ✅ **AI integration update** — upgraded `emergentintegrations` from 0.1.0 to 0.2.0 to use the required streaming API.
+- ✅ Verification: backend 9/9 v2.0 tests passed, production frontend build passed, real Claude generation/cache passed, and Playwright confirmed remediation rendering, fresh scan-ID completion, presets, command cycling, and 390px mobile behavior.
+
 ### v1.5 (Feb 2026)
 - ✅ **Self-healing nmap install**: lifespan startup hook `_ensure_nmap_installed()` runs `apt-get install -y nmap` if missing.
 - ✅ **Runtime nmap detection**: services now use `_nmap_available()` at call-time.
 - ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
 - ✅ Frontend SARIF download button on each report card.
+
+### v1.9 (Feb 2026) — Hands-free Terminal + Safer Scheduler Delete
+- ✅ **Terminal rewritten** as a real CLI over the async scan endpoints. Commands: `help`, `clear`, `whoami`, `scans`, `scan <target> [preset]`, `vuln <target> [preset]`, `netscan <cidr> [preset]`, `cancel <prefix>`, `summary <prefix>`, `xml <prefix>`, `ai <query>`. Includes ArrowUp/ArrowDown history recall, auto-scroll, scan_id prefix resolution, streaming progress lines, and direct blob download for XML.
+- ✅ **Scheduler delete confirmation** — clicking delete now opens a Radix AlertDialog (`data-testid='delete-schedule-dialog'`) that shows the schedule name/cron/target before the destructive action.
+- ✅ 8/8 new terminal backend endpoint tests, 23/23 v17+v18 regression, full Playwright flow (scan lifecycle to completion + AlertDialog cancel/confirm).
+
+### v1.8 (Feb 2026) — Cron-style scan scheduler + non-blocking startup
+- ✅ **Scheduler CRUD** — `POST/GET/PATCH/DELETE /api/schedules` with 5-field cron validation via `croniter`, per-user isolation, invalid cron/scan_type → 400.
+- ✅ **Background dispatcher** — `services/scheduler.py` runs a 20-second asyncio tick loop that fires `enqueue_scheduled_scan()` for any enabled schedule whose `next_run_at <= now`, advances the cron cursor, and stamps `last_run_at` + `last_scan_id`. Fault-tolerant: bad schedules disable themselves instead of hot-looping.
+- ✅ **Frontend `/scheduler`** — new page with cron templates (15min/hourly/6h/daily/weekly), scan-type + preset selectors, pause/resume switch, delete, next/last-run timestamps, and links back to the scan pages.
+- ✅ **Non-blocking startup** — `_ensure_nmap_installed()` now runs under `await asyncio.to_thread(...)` so the event loop is not blocked during the (~15s) apt install on cold containers.
+- ✅ 12/12 new pytest tests including a live 60-90s dispatch verification; 21/22 regression pass (only the stale v1.5.0 version assertion, now bumped to 1.8.0).
+
+### v1.7 (Feb 2026) — Raw nmap XML evidence export
+- ✅ **`GET /api/scans/{id}/nmap-xml`** streams the raw nmap XML stored at `scan.results.nmap_xml` as `application/xml` with `Content-Disposition: attachment; filename="pentestai-scan-{scan_id}.xml"`.
+- ✅ **Download XML button** on `ReconPage`, `VulnerabilitiesPage`, `NetworkPage` (`data-testid="download-nmap-xml-button"`) — appears only when scan is completed AND `results.nmap_xml` is present.
+- ✅ Verified: 11/11 pytest tests + 3/3 playwright pages (auth, cross-user 404, unauth 401 all covered).
 
 ### v1.6 (Feb 2026) — One-click "Launch in distro"
 - ✅ **`GET /api/distros/{id}/launch?target=&scan_id=`** returns a self-contained bash script for BackBox / Pentoo / DEFT / Kodachi pre-loaded with `PENTESTAI_TARGET` env var.
@@ -75,6 +104,7 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 │   │   ├── mfa_service.py
 │   │   ├── presets.py
 │   │   ├── nvd_service.py
+│   │   ├── remediation_service.py # Claude structured remediation generation
 │   │   ├── distros.py
 │   │   └── sarif_service.py       # NEW: SARIF 2.1 builder
 │   ├── tests/                # 6 pytest files (backend_test, scans_v12, v13, v14_features, v14_distros, v15_features)
@@ -89,12 +119,13 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 │   │   ├── settings/MFASettings.js
 │   │   └── scans/{ScanProgress,AIScanSummary,PresetSelector,DistroRecommendation}.js
 │   └── pages/{Login,Register,Dashboard,Recon,Vulnerabilities,Network,Assistant,Terminal,Reports,Settings,Toolkits}Page.js
+│   └── lib/terminalAutocomplete.js and components/scans/AIRemediation.js
 └── memory/{PRD.md,test_credentials.md}
 ```
 
 ## Key API Endpoints
 - Auth: `POST /api/auth/register|login|login/mfa`, `GET /api/auth/me|mfa/status`, MFA setup/enable/disable
-- Scans: `POST /api/scans` (queued async), `GET /api/scans|{id}`, `POST /api/scans/{id}/cancel|summary`, `GET /api/scans/presets`, **`GET /api/scans/{id}/sarif`**
+- Scans: `POST /api/scans` (queued async), `GET /api/scans|{id}`, `POST /api/scans/{id}/cancel|summary`, **`POST /api/scans/{id}/remediations/{finding_index}`**, `GET /api/scans/presets`, **`GET /api/scans/{id}/sarif`**
 - Shodan: `POST /api/shodan/lookup`, `GET /api/shodan/status`
 - Reports: `POST /api/reports/generate`, `GET /api/reports|{id}/pdf|{id}/sarif`
 - Chat: `POST /api/chat`, `GET /api/chat/history`
@@ -110,8 +141,7 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 
 ### P1 (High Priority)
 - Email/Slack alerts on critical findings (auto-deliver AI summary + PDF/SARIF)
-- Scan scheduling (cron-style automation)
-- Move startup `subprocess.run(apt-get)` off the event loop (asyncio.to_thread) — minor
+- Persistent cross-session Terminal command history
 
 ### P2 (Medium Priority)
 - Team collaboration & shared workspaces
@@ -123,10 +153,9 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - Mobile responsive polish
 - Dark web monitoring integration
 - Compliance mapping (PCI-DSS, NIST, expand OWASP)
-- AI-powered remediation suggestions per finding
 - Distro release tracker
 
 ## Next Tasks
 1. Email/Slack alerts (P1)
-2. Scan scheduling (P1)
+2. Persistent Terminal history (P1)
 3. Webhook on scan completion (P2)

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import axios from 'axios';
-import { Play, Loader2, Network as NetworkIcon, AlertTriangle, Server } from 'lucide-react';
+import { Play, Loader2, Network as NetworkIcon, AlertTriangle, Server, FileArchive } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -55,6 +55,23 @@ export default function NetworkPage() {
             else toast.error('Analysis failed');
         },
     });
+
+    const downloadNmapXml = async (scanId, target) => {
+        try {
+            const res = await axios.get(`${API_URL}/api/scans/${scanId}/nmap-xml`, { responseType: 'blob' });
+            const url = URL.createObjectURL(res.data);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `pentestai-${target || scanId}.xml`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            toast.success('Raw nmap XML downloaded');
+        } catch (e) {
+            toast.error(e.response?.status === 404 ? 'No XML artifact available' : 'Download failed');
+        }
+    };
 
     const cancelActiveScan = async () => {
         if (!activeScanId) return;
@@ -126,9 +143,21 @@ export default function NetworkPage() {
                         )}
                         <div className="flex items-center justify-between">
                             <p className="text-sm text-muted-foreground">Results for <span className="font-mono text-foreground">{selectedScan.target}</span></p>
-                            {selectedScan?.status === 'completed' && (
-                                <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
-                            )}
+                            <div className="flex items-center gap-2">
+                                {selectedScan?.status === 'completed' && selectedScan?.results?.nmap_xml && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => downloadNmapXml(selectedScan.id, selectedScan.target)}
+                                        data-testid="download-nmap-xml-button"
+                                    >
+                                        <FileArchive className="w-4 h-4 mr-2" />Download XML
+                                    </Button>
+                                )}
+                                {selectedScan?.status === 'completed' && (
+                                    <AIScanSummary scanId={selectedScan.id} initialSummary={selectedScan.ai_summary} />
+                                )}
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="network-summary">
                             <SummaryCard label="Hosts Alive" value={summary.hosts_alive || 0} />

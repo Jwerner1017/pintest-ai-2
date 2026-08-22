@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     Shield, LayoutDashboard, Search, Bug, Network, MessageSquare,
-    FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight, Boxes
+    FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight, Boxes, CalendarClock
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useAuth } from '../../contexts/AuthContext';
@@ -16,16 +16,17 @@ const navItems = [
     { path: '/terminal', label: 'Terminal', icon: Terminal },
     { path: '/reports', label: 'Reports', icon: FileText },
     { path: '/toolkits', label: 'Toolkits', icon: Boxes },
+    { path: '/scheduler', label: 'Scheduler', icon: CalendarClock },
     { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onMobileClose }) {
     const location = useLocation();
     const { user, logout } = useAuth();
     const [collapsed, setCollapsed] = useState(false);
 
     return (
-        <aside className={`h-screen sticky top-0 border-r border-border/40 bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`} data-testid="sidebar">
+        <aside className={`fixed inset-y-0 left-0 z-[70] flex h-screen w-64 flex-col border-r border-border/40 bg-card/95 backdrop-blur-md transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 md:bg-card/30 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'md:w-16' : 'md:w-64'}`} data-testid="sidebar">
             <div className="p-4 border-b border-border/40 flex items-center justify-between">
                 {!collapsed && (
                     <Link to="/dashboard" className="flex items-center gap-2" data-testid="sidebar-logo">
@@ -38,7 +39,7 @@ export function Sidebar() {
                         <Shield className="w-6 h-6 text-primary" />
                     </Link>
                 )}
-                <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className={`h-8 w-8 ${collapsed ? 'mx-auto' : ''}`} data-testid="sidebar-toggle">
+                <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className={`hidden h-8 w-8 md:inline-flex ${collapsed ? 'mx-auto' : ''}`} data-testid="sidebar-toggle">
                     {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
                 </Button>
             </div>
@@ -54,6 +55,7 @@ export function Sidebar() {
                             className={`flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'} ${collapsed ? 'justify-center' : ''}`}
                             data-testid={`nav-${item.path.slice(1)}`}
                             title={collapsed ? item.label : undefined}
+                            onClick={onMobileClose}
                         >
                             <Icon className="w-5 h-5 flex-shrink-0" />
                             {!collapsed && <span>{item.label}</span>}

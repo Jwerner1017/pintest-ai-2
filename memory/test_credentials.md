@@ -7,12 +7,12 @@ POST /api/auth/register
 { "email": "test@example.com", "password": "password123", "username": "test" }
 ```
 
-## Demo Account
-Created via `/api/auth/register`. No seeded admin account.
+## Current QA Account
+Created via `/api/auth/register`. No seeded admin account. Includes one completed vulnerability scan for v2.0 remediation testing.
 
-- **Email**: testuser@example.com
-- **Password**: password123
-- **Username**: testuser
+- **Email**: qa.v20@example.com
+- **Password**: PentestAI-V20!
+- **Username**: qa-v20
 - **Role**: tester (default)
 
 ## MFA Test Flow

@@ -11,9 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from core.db import db
-from core.models import ScanCreate, ScanResponse, ShodanRequest
+from core.models import RemediationResponse, ScanCreate, ScanResponse, ShodanRequest
 from core.security import get_current_user
-from services import nmap_service, vuln_service, network_service, shodan_service, presets as presets_service, distros as distros_service, sarif_service
+from services import distros as distros_service
+from services import network_service, nmap_service, presets as presets_service, remediation_service, sarif_service, shodan_service, vuln_service
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,40 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
     task.add_done_callback(lambda _t: _active_tasks.pop(scan_id, None))
 
     return _scan_resp(scan_doc)
+
+
+async def enqueue_scheduled_scan(user_id: str, scan_type: str, target: str, options: dict, source: dict | None = None) -> str:
+    """Insert a scan doc and kick off _execute_scan without going through the HTTP path.
+
+    Used by the schedule service. Returns the new scan_id.
+    """
+    scan_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    scan_doc = {
+        "id": scan_id,
+        "user_id": user_id,
+        "scan_type": scan_type,
+        "target": target,
+        "options": options or {},
+        "status": "running",
+        "progress": 0,
+        "stage": "Queued (scheduled)",
+        "results": None,
+        "created_at": now,
+        "source": source or {"trigger": "schedule"},
+    }
+    await db.scans.insert_one(scan_doc)
+    await db.activity_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "action": f"Scheduled {scan_type} scan triggered",
+        "target": target,
+        "created_at": now,
+    })
+    task = asyncio.create_task(_execute_scan(scan_id, scan_type, target, options or {}))
+    _active_tasks[scan_id] = task
+    task.add_done_callback(lambda _t: _active_tasks.pop(scan_id, None))
+    return scan_id
 
 
 async def _execute_scan(scan_id: str, scan_type: str, target: str, options: dict):
@@ -162,6 +197,22 @@ async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_use
     return {"message": "Scan deleted"}
 
 
+@router.get("/scans/{scan_id}/nmap-xml")
+async def download_nmap_xml(scan_id: str, current_user: dict = Depends(get_current_user)):
+    """Download the raw nmap XML output as an evidence artifact (pairs with DEFT workflow)."""
+    scan = await db.scans.find_one({"id": scan_id, "user_id": current_user["id"]}, {"_id": 0})
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    xml = (scan.get("results") or {}).get("nmap_xml") or ""
+    if not xml:
+        raise HTTPException(status_code=404, detail="No nmap XML artifact available for this scan")
+    return Response(
+        content=xml,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="pentestai-scan-{scan_id}.xml"'},
+    )
+
+
 @router.get("/scans/{scan_id}/sarif")
 async def scan_sarif(scan_id: str, current_user: dict = Depends(get_current_user)):
     """Download scan results as SARIF 2.1 JSON (consumable by GitHub Code Scanning, etc.)."""
@@ -242,6 +293,62 @@ async def ai_summary(scan_id: str, current_user: dict = Depends(get_current_user
         "generated_at": generated_at,
         "cached": False,
     }
+
+
+@router.post("/scans/{scan_id}/remediations/{finding_index}", response_model=RemediationResponse)
+async def ai_remediation(
+    scan_id: str,
+    finding_index: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Generate or return a cached DevOps-ready remediation plan for one finding."""
+    scan = await db.scans.find_one(
+        {"id": scan_id, "user_id": current_user["id"]},
+        {"_id": 0},
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Scan must be completed before generating remediation")
+
+    findings = (scan.get("results") or {}).get("vulnerabilities") or []
+    if finding_index < 0 or finding_index >= len(findings):
+        raise HTTPException(status_code=404, detail="Vulnerability finding not found")
+
+    finding = findings[finding_index]
+    cached = finding.get("ai_remediation")
+    if cached:
+        return RemediationResponse(
+            finding_index=finding_index,
+            finding_id=str(finding.get("id") or f"finding-{finding_index + 1}"),
+            remediation=cached["plan"],
+            model=cached["model"],
+            generated_at=cached["generated_at"],
+            cached=True,
+        )
+
+    try:
+        plan, model_name = await remediation_service.generate_remediation(scan_id, scan.get("target", ""), finding)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("remediation generation failed for scan %s finding %d", scan_id, finding_index)
+        raise HTTPException(status_code=502, detail="AI remediation generation failed") from exc
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    stored = {"plan": plan, "model": model_name, "generated_at": generated_at}
+    await db.scans.update_one(
+        {"id": scan_id, "user_id": current_user["id"]},
+        {"$set": {f"results.vulnerabilities.{finding_index}.ai_remediation": stored}},
+    )
+    return RemediationResponse(
+        finding_index=finding_index,
+        finding_id=str(finding.get("id") or f"finding-{finding_index + 1}"),
+        remediation=plan,
+        model=model_name,
+        generated_at=generated_at,
+        cached=False,
+    )
 
 
 # ==================== Presets ====================
