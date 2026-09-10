@@ -1,17 +1,38 @@
 """
 Real Network Scanner Module for PentestAI
 Performs actual network reconnaissance using Python libraries.
+Integrates with Shodan for internet-wide device intelligence.
 """
 import socket
 import asyncio
 import dns.resolver
 import whois
+import os
 from datetime import datetime, timezone
 from typing import Optional
 import logging
 import re
 
+# Shodan integration
+try:
+    import shodan
+    SHODAN_AVAILABLE = True
+except ImportError:
+    SHODAN_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+# Shodan API client (initialized lazily)
+_shodan_api = None
+
+def get_shodan_api():
+    """Get or create Shodan API client."""
+    global _shodan_api
+    if _shodan_api is None:
+        api_key = os.environ.get('SHODAN_API_KEY')
+        if api_key and SHODAN_AVAILABLE:
+            _shodan_api = shodan.Shodan(api_key)
+    return _shodan_api
 
 # Common ports to scan
 COMMON_PORTS = {
@@ -263,6 +284,94 @@ def analyze_vulnerabilities(target: str, ports: list, dns_records: list) -> list
     return vulnerabilities
 
 
+def get_shodan_host_info(ip: str) -> dict:
+    """Get Shodan intelligence for an IP address."""
+    api = get_shodan_api()
+    if not api:
+        return {"error": "Shodan API not configured"}
+    
+    try:
+        host = api.host(ip)
+        
+        # Extract key information
+        shodan_data = {
+            "ip": host.get("ip_str"),
+            "organization": host.get("org"),
+            "isp": host.get("isp"),
+            "asn": host.get("asn"),
+            "country": host.get("country_name"),
+            "city": host.get("city"),
+            "last_update": host.get("last_update"),
+            "open_ports": host.get("ports", []),
+            "hostnames": host.get("hostnames", []),
+            "services": [],
+            "vulnerabilities": []
+        }
+        
+        # Extract service banners and vulnerabilities
+        for banner in host.get("data", []):
+            service = {
+                "port": banner.get("port"),
+                "transport": banner.get("transport", "tcp"),
+                "product": banner.get("product"),
+                "version": banner.get("version"),
+                "module": banner.get("_shodan", {}).get("module"),
+                "banner_preview": (banner.get("data") or "")[:200]
+            }
+            shodan_data["services"].append(service)
+            
+            # Extract CVEs from vulnerabilities
+            vulns = banner.get("vulns") or {}
+            for cve_id, vuln_details in vulns.items():
+                shodan_data["vulnerabilities"].append({
+                    "id": cve_id,
+                    "port": banner.get("port"),
+                    "cvss": vuln_details.get("cvss") if isinstance(vuln_details, dict) else None,
+                    "verified": vuln_details.get("verified") if isinstance(vuln_details, dict) else False,
+                    "source": "shodan"
+                })
+        
+        return shodan_data
+        
+    except shodan.APIError as e:
+        error_msg = str(e)
+        if "No information available" in error_msg:
+            return {"error": "No Shodan data available for this IP", "ip": ip}
+        logger.warning(f"Shodan API error for {ip}: {e}")
+        return {"error": f"Shodan lookup failed: {error_msg}"}
+    except Exception as e:
+        logger.error(f"Shodan lookup error: {e}")
+        return {"error": f"Shodan lookup failed: {str(e)}"}
+
+
+def get_shodan_domain_info(domain: str) -> dict:
+    """Get Shodan DNS information for a domain."""
+    api = get_shodan_api()
+    if not api:
+        return {"error": "Shodan API not configured"}
+    
+    try:
+        # Get domain info from Shodan
+        result = api.dns.domain_info(domain)
+        
+        return {
+            "domain": domain,
+            "subdomains": result.get("subdomains", [])[:20],  # Limit to 20
+            "records": [
+                {"subdomain": r.get("subdomain"), "type": r.get("type"), "value": r.get("value")}
+                for r in result.get("data", [])[:30]  # Limit records
+            ],
+            "tags": result.get("tags", [])
+        }
+        
+    except shodan.APIError as e:
+        logger.warning(f"Shodan domain lookup error for {domain}: {e}")
+        return {"error": f"Domain lookup failed: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Shodan domain error: {e}")
+        return {"error": str(e)}
+
+
 async def perform_recon_scan(target: str) -> dict:
     """Perform a full reconnaissance scan on the target."""
     if not is_valid_target(target):
@@ -278,7 +387,8 @@ async def perform_recon_scan(target: str) -> dict:
         "ip_address": None,
         "whois": {},
         "dns_records": [],
-        "vulnerabilities": []
+        "vulnerabilities": [],
+        "shodan": None
     }
     
     # Resolve hostname to IP
@@ -306,15 +416,58 @@ async def perform_recon_scan(target: str) -> dict:
     except Exception as e:
         logger.warning(f"Port scan failed: {e}")
     
+    # Shodan intelligence (if IP is available)
+    if ip and ip != "Unable to resolve":
+        try:
+            shodan_data = get_shodan_host_info(ip)
+            if shodan_data and "error" not in shodan_data:
+                results["shodan"] = shodan_data
+                
+                # Merge Shodan hostnames
+                for hostname in shodan_data.get("hostnames", []):
+                    if hostname not in results["hostnames"]:
+                        results["hostnames"].append(hostname)
+                
+                # Merge Shodan open ports into our port list
+                for port in shodan_data.get("open_ports", []):
+                    existing_ports = [p["port"] for p in results["ports"]]
+                    if port not in existing_ports:
+                        results["ports"].append({
+                            "port": port,
+                            "service": COMMON_PORTS.get(port, "unknown"),
+                            "state": "open",
+                            "version": "unknown",
+                            "source": "shodan"
+                        })
+                
+                # Add Shodan CVEs to vulnerabilities
+                for vuln in shodan_data.get("vulnerabilities", []):
+                    results["vulnerabilities"].append({
+                        "id": vuln["id"],
+                        "severity": "high" if vuln.get("cvss", 0) >= 7 else "medium" if vuln.get("cvss", 0) >= 4 else "low",
+                        "description": f"CVE detected by Shodan on port {vuln.get('port')}",
+                        "cvss": vuln.get("cvss"),
+                        "source": "shodan"
+                    })
+        except Exception as e:
+            logger.warning(f"Shodan lookup failed: {e}")
+            results["shodan"] = {"error": str(e)}
+    
     # OS detection
     results["os_detection"] = detect_os_from_ports(results["ports"])
     
-    # Vulnerability analysis
-    results["vulnerabilities"] = analyze_vulnerabilities(
+    # Vulnerability analysis (our own checks)
+    local_vulns = analyze_vulnerabilities(
         target, 
         results["ports"], 
         results["dns_records"]
     )
+    
+    # Merge local vulnerabilities (avoid duplicates)
+    existing_vuln_ids = [v["id"] for v in results["vulnerabilities"]]
+    for vuln in local_vulns:
+        if vuln["id"] not in existing_vuln_ids:
+            results["vulnerabilities"].append(vuln)
     
     results["scan_completed"] = datetime.now(timezone.utc).isoformat()
     

@@ -707,6 +707,67 @@ function ReconPage() {
                                         </div>
                                     )}
 
+                                    {/* Shodan Intelligence */}
+                                    {selectedScan.results.shodan && !selectedScan.results.shodan.error && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                                <Wifi className="w-4 h-4 text-cyan-400" />
+                                                Shodan Intelligence
+                                                <Badge variant="outline" className="ml-2 border-cyan-500/30 text-cyan-400 text-xs">OSINT</Badge>
+                                            </h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+                                                {selectedScan.results.shodan.organization && (
+                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
+                                                        <p className="text-xs text-muted-foreground mb-1">Organization</p>
+                                                        <p className="text-sm font-medium">{selectedScan.results.shodan.organization}</p>
+                                                    </div>
+                                                )}
+                                                {selectedScan.results.shodan.isp && (
+                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
+                                                        <p className="text-xs text-muted-foreground mb-1">ISP</p>
+                                                        <p className="text-sm">{selectedScan.results.shodan.isp}</p>
+                                                    </div>
+                                                )}
+                                                {selectedScan.results.shodan.asn && (
+                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
+                                                        <p className="text-xs text-muted-foreground mb-1">ASN</p>
+                                                        <p className="text-sm font-mono">{selectedScan.results.shodan.asn}</p>
+                                                    </div>
+                                                )}
+                                                {selectedScan.results.shodan.country && (
+                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
+                                                        <p className="text-xs text-muted-foreground mb-1">Location</p>
+                                                        <p className="text-sm">{selectedScan.results.shodan.city ? `${selectedScan.results.shodan.city}, ` : ''}{selectedScan.results.shodan.country}</p>
+                                                    </div>
+                                                )}
+                                                {selectedScan.results.shodan.last_update && (
+                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
+                                                        <p className="text-xs text-muted-foreground mb-1">Last Seen</p>
+                                                        <p className="text-sm">{new Date(selectedScan.results.shodan.last_update).toLocaleDateString()}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Shodan Services */}
+                                            {selectedScan.results.shodan.services && selectedScan.results.shodan.services.length > 0 && (
+                                                <div className="mt-4">
+                                                    <p className="text-xs text-muted-foreground uppercase mb-2">Detected Services ({selectedScan.results.shodan.services.length})</p>
+                                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                        {selectedScan.results.shodan.services.slice(0, 10).map((svc, i) => (
+                                                            <div key={i} className="p-2 bg-background/50 border border-border/20 flex items-center justify-between text-sm">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-mono text-cyan-400">{svc.port}/{svc.transport}</span>
+                                                                    {svc.product && <span className="text-muted-foreground">{svc.product} {svc.version || ''}</span>}
+                                                                </div>
+                                                                {svc.module && <Badge variant="outline" className="text-xs">{svc.module}</Badge>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Vulnerabilities */}
                                     {selectedScan.results.vulnerabilities && selectedScan.results.vulnerabilities.length > 0 && (
                                         <div>
@@ -715,8 +776,14 @@ function ReconPage() {
                                                 {selectedScan.results.vulnerabilities.map((vuln, i) => (
                                                     <div key={i} className="p-3 bg-background/50 border border-border/20">
                                                         <div className="flex items-center justify-between mb-2">
-                                                            <span className="font-mono text-sm text-primary">{vuln.id}</span>
-                                                            <Badge className={vuln.severity === 'critical' ? 'bg-red-500/20 text-red-400' : vuln.severity === 'high' ? 'bg-orange-500/20 text-orange-400' : vuln.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}>{vuln.severity?.toUpperCase()}</Badge>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-mono text-sm text-primary">{vuln.id}</span>
+                                                                {vuln.source === 'shodan' && <Badge variant="outline" className="text-xs border-cyan-500/30 text-cyan-400">Shodan</Badge>}
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                {vuln.cvss && <span className="text-xs text-muted-foreground">CVSS: {vuln.cvss}</span>}
+                                                                <Badge className={vuln.severity === 'critical' ? 'bg-red-500/20 text-red-400' : vuln.severity === 'high' ? 'bg-orange-500/20 text-orange-400' : vuln.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}>{vuln.severity?.toUpperCase()}</Badge>
+                                                            </div>
                                                         </div>
                                                         <p className="text-sm text-muted-foreground">{vuln.description}</p>
                                                         {vuln.remediation && <p className="text-xs text-green-400 mt-2">Fix: {vuln.remediation}</p>}

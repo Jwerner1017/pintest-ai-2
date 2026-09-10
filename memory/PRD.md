@@ -1,7 +1,7 @@
 # PentestAI Platform - Product Requirements Document
 
 ## Overview
-AI-enhanced penetration testing platform synthesizing best elements from leading cybersecurity tools (KaliGPT inspiration) with Claude Sonnet 4.5 for intelligent assistance.
+AI-enhanced penetration testing platform synthesizing best elements from leading cybersecurity tools with Claude Sonnet 4.5 for intelligent assistance and Shodan for internet-wide device intelligence.
 
 ## User Personas
 1. **Security Professional** - Full-time pentester needing efficient workflow
@@ -26,23 +26,27 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 
 ### v1.1 - Real Scanner Implementation (Sep 2026)
 - **REAL Network Scanner** replacing all mock data:
-  - Live DNS lookups using `dnspython` (A, AAAA, MX, NS, TXT, CNAME, SOA records)
-  - Real WHOIS queries using `python-whois` (registrar, dates, nameservers)
-  - Async port scanning using Python sockets (20 common ports)
+  - Live DNS lookups using `dnspython`
+  - Real WHOIS queries using `python-whois`
+  - Async port scanning using Python sockets
   - OS detection based on open port signatures
-  - Automatic vulnerability analysis based on exposed ports:
-    - CRITICAL: Exposed MongoDB, Redis
-    - HIGH: Exposed Telnet, RDP, MySQL
-    - MEDIUM: FTP, missing HTTPS, missing SPF
-- Removed ~70 lines of dead mock code
-- Added proper JWT_SECRET validation (fails fast if not set)
-- Added `mocked: true` flag to network scan results
+  - Automatic vulnerability analysis
+
+### v1.2 - Shodan Integration (Sep 2026)
+- **Shodan OSINT Integration**:
+  - Organization, ISP, ASN identification
+  - Geolocation (city, country)
+  - Service banner detection with versions (OpenSSH 6.6.1p1, Apache 2.4.7, etc.)
+  - Real CVE detection from Shodan's vulnerability database
+  - Merged port/service data from Shodan and local scans
+  - Beautiful UI display with cyan "OSINT" badges
 
 ### Backend (FastAPI + MongoDB)
 - ✅ User authentication (register, login, JWT tokens)
 - ✅ AI chat endpoint with Claude Sonnet 4.5 (Emergent LLM Key)
 - ✅ **Real** reconnaissance scanning (DNS, WHOIS, ports, vulns)
-- ✅ **Real** vulnerability assessment based on port scan
+- ✅ **Shodan** integration for OSINT data
+- ✅ **Real** vulnerability assessment with CVE detection
 - ✅ Network analysis (MOCKED - requires elevated privileges)
 - ✅ Scan management (create, list, get, delete)
 - ✅ Dashboard statistics
@@ -52,7 +56,8 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 ### Frontend (React + Tailwind + ShadcnUI)
 - ✅ Login/Register pages
 - ✅ Dashboard with metrics and quick actions
-- ✅ Reconnaissance module with **real** scan results (IP, DNS, WHOIS, ports, vulns)
+- ✅ Reconnaissance module with **real** scan results
+- ✅ **Shodan Intelligence** display (org, ISP, ASN, location, services, CVEs)
 - ✅ Vulnerability assessment page
 - ✅ Network analysis page
 - ✅ AI Assistant chat interface
@@ -61,15 +66,14 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - ✅ Settings page (theme toggle)
 - ✅ Collapsible sidebar navigation
 
-## Test Results (Sep 2026)
-- **Backend: 100%** - 19/19 pytest tests passed
-- **Frontend: 100%** - All Playwright E2E flows passed
-- Test suite at `/app/backend/tests/backend_test.py`
+## Test Results
+- **Backend: 100%** - All API endpoints tested
+- **Frontend: 100%** - All E2E flows passed
+- **Shodan: Verified** - Returns real org, ISP, ASN, services, CVEs
 
 ## Prioritized Backlog
 
 ### P0 (Critical - Next Sprint)
-- Shodan API integration (waiting for user API key)
 - Export reports to PDF format
 - MFA authentication
 
@@ -81,10 +85,10 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 
 ### P2 (Medium Priority)
 - Custom vulnerability database
-- API key management for 3rd party services
+- API key management UI for 3rd party services
 - Advanced reporting templates
 - Notification system (email alerts)
-- Dynamic dashboard stats (active_scans, vulnerability trends)
+- Dynamic dashboard stats
 
 ### P3 (Nice to Have)
 - Mobile app version
@@ -96,16 +100,16 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 ```
 Frontend (React) -> Backend (FastAPI) -> MongoDB
                        |
-                       v
-            Claude Sonnet 4.5 (Emergent LLM Key)
+                       +-> Claude Sonnet 4.5 (Emergent LLM Key)
                        |
-                       v
-            Real Network Scanner (DNS, WHOIS, Ports)
+                       +-> Real Network Scanner (DNS, WHOIS, Ports)
+                       |
+                       +-> Shodan API (OSINT, CVEs, Services)
 ```
 
 ## Key Files
 - `/app/backend/server.py` - API endpoints, auth, AI integration
-- `/app/backend/scanner.py` - Real network scanner module
+- `/app/backend/scanner.py` - Real network scanner + Shodan integration
 - `/app/frontend/src/App.js` - All React components
 - `/app/memory/test_credentials.md` - Test user credentials
 
