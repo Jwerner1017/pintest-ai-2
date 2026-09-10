@@ -1,5 +1,5 @@
-import { useState, useEffect, createContext, useContext, useCallback, useRef } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
 import { Button } from './components/ui/button';
@@ -16,562 +16,93 @@ import { Checkbox } from './components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './components/ui/dialog';
 import { Textarea } from './components/ui/textarea';
 import { 
-    Shield, LayoutDashboard, Search, Bug, Network, MessageSquare, 
-    FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight,
-    Sun, Moon, Bell, AlertCircle, AlertTriangle, Target, Activity, ArrowUpRight, Clock,
+    Shield, Search, Bug, Network, MessageSquare, FileText, Terminal, 
+    AlertCircle, AlertTriangle, Target, Activity, ArrowUpRight, Clock,
     Send, Bot, User, Loader2, Sparkles, Copy, Check, Globe, Server, Wifi,
     Play, FileWarning, CheckCircle, XCircle, Download, Calendar, Lightbulb, X,
-    Palette, Key, Layers, Timer, ExternalLink, Info, Trash2, RefreshCw, Plus
+    Palette, Key, Layers, Timer, ExternalLink, Info, Trash2, RefreshCw, Plus, FileDown
 } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { MainLayout, Header } from './components/layout';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
+import { API_URL } from './lib/api';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_BACKEND_URL;
-
-// Auth Context
-const AuthContext = createContext(null);
-
-function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token'));
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (token) {
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-            fetchUser();
-        } else {
-            setLoading(false);
-        }
-    }, [token]);
-
-    const fetchUser = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/api/auth/me`);
-            setUser(response.data);
-        } catch (error) {
-            logout();
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const login = async (email, password) => {
-        const response = await axios.post(`${API_URL}/api/auth/login`, { email, password });
-        const { access_token, user: userData } = response.data;
-        localStorage.setItem('token', access_token);
-        axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-        setToken(access_token);
-        setUser(userData);
-        return userData;
-    };
-
-    const register = async (email, password, username) => {
-        const response = await axios.post(`${API_URL}/api/auth/register`, { email, password, username });
-        const { access_token, user: userData } = response.data;
-        localStorage.setItem('token', access_token);
-        axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-        setToken(access_token);
-        setUser(userData);
-        return userData;
-    };
-
-    const logout = () => {
-        localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
-        setToken(null);
-        setUser(null);
-    };
-
-    return (
-        <AuthContext.Provider value={{ user, token, loading, login, register, logout, isAuthenticated: !!user }}>
-            {children}
-        </AuthContext.Provider>
-    );
+// Protected Route wrapper
+function ProtectedRoute({ children }) {
+    const { isAuthenticated, loading } = useAuth();
+    if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
-function useAuth() {
-    return useContext(AuthContext);
-}
-
-// Sidebar Component
-const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/recon', label: 'Reconnaissance', icon: Search },
-    { path: '/bulk-scan', label: 'Bulk Scan', icon: Layers },
-    { path: '/scheduled', label: 'Scheduled Scans', icon: Timer },
-    { path: '/vulnerabilities', label: 'Vulnerabilities', icon: Bug },
-    { path: '/network', label: 'Network', icon: Network },
-    { path: '/assistant', label: 'AI Assistant', icon: MessageSquare },
-    { path: '/terminal', label: 'Terminal', icon: Terminal },
-    { path: '/reports', label: 'Reports', icon: FileText },
-    { path: '/settings', label: 'Settings', icon: Settings },
-];
-
-function Sidebar() {
-    const location = useLocation();
-    const { user, logout } = useAuth();
-    const [collapsed, setCollapsed] = useState(false);
-
-    return (
-        <aside className={`h-screen sticky top-0 border-r border-border/40 bg-card/30 backdrop-blur-sm flex flex-col transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`} data-testid="sidebar">
-            <div className="p-4 border-b border-border/40 flex items-center justify-between">
-                {!collapsed && (
-                    <Link to="/dashboard" className="flex items-center gap-2" data-testid="sidebar-logo">
-                        <Shield className="w-6 h-6 text-primary" />
-                        <span className="font-bold text-lg">PentestAI</span>
-                    </Link>
-                )}
-                {collapsed && (
-                    <Link to="/dashboard" className="mx-auto" data-testid="sidebar-logo-collapsed">
-                        <Shield className="w-6 h-6 text-primary" />
-                    </Link>
-                )}
-                <Button variant="ghost" size="icon" onClick={() => setCollapsed(!collapsed)} className={`h-8 w-8 ${collapsed ? 'mx-auto' : ''}`} data-testid="sidebar-toggle">
-                    {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-                </Button>
-            </div>
-
-            <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-                {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = location.pathname === item.path;
-                    return (
-                        <Link
-                            key={item.path}
-                            to={item.path}
-                            className={`flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'} ${collapsed ? 'justify-center' : ''}`}
-                            data-testid={`nav-${item.path.slice(1)}`}
-                            title={collapsed ? item.label : undefined}
-                        >
-                            <Icon className="w-5 h-5 flex-shrink-0" />
-                            {!collapsed && <span>{item.label}</span>}
-                        </Link>
-                    );
-                })}
-            </nav>
-
-            <div className="p-4 border-t border-border/40">
-                {!collapsed ? (
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 bg-primary/20 flex items-center justify-center text-primary font-medium text-sm">
-                                {user?.username?.charAt(0).toUpperCase() || 'U'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{user?.username}</p>
-                                <p className="text-xs text-muted-foreground truncate">{user?.role}</p>
-                            </div>
-                        </div>
-                        <Button variant="outline" size="sm" className="w-full justify-start gap-2" onClick={logout} data-testid="logout-button">
-                            <LogOut className="w-4 h-4" />
-                            Logout
-                        </Button>
-                    </div>
-                ) : (
-                    <Button variant="ghost" size="icon" className="w-full" onClick={logout} data-testid="logout-button-collapsed" title="Logout">
-                        <LogOut className="w-5 h-5" />
-                    </Button>
-                )}
-            </div>
-        </aside>
-    );
-}
-
-// Header Component
-function Header({ title, subtitle }) {
-    const [theme, setTheme] = useState('dark');
-
-    useEffect(() => {
-        const savedTheme = localStorage.getItem('theme') || 'dark';
-        setTheme(savedTheme);
-        document.documentElement.classList.remove('light', 'dark');
-        document.documentElement.classList.add(savedTheme);
-    }, []);
-
-    const toggleTheme = () => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.classList.remove('light', 'dark');
-        document.documentElement.classList.add(newTheme);
-    };
-
-    return (
-        <header className="bg-background/80 backdrop-blur-md border-b border-border/40 sticky top-0 z-50 px-6 py-4 flex items-center justify-between" data-testid="header">
-            <div>
-                <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-                {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
-            </div>
-            <div className="flex items-center gap-4">
-                <div className="relative hidden md:block">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input placeholder="Search targets, scans..." className="pl-9 w-64 bg-background" data-testid="header-search" />
-                </div>
-                <Button variant="ghost" size="icon" className="relative" data-testid="notifications-button">
-                    <Bell className="w-5 h-5" />
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={toggleTheme} data-testid="theme-toggle">
-                    {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                </Button>
-            </div>
-        </header>
-    );
-}
-
-// Login Page
-function LoginPage() {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
-    const { login } = useAuth();
-    const navigate = useNavigate();
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
-        setLoading(true);
-        try {
-            await login(email, password);
-            navigate('/dashboard');
-        } catch (err) {
-            setError(err.response?.data?.detail || 'Login failed');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4" style={{ backgroundImage: 'linear-gradient(to right, rgba(128, 128, 128, 0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(128, 128, 128, 0.07) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
-            <div className="w-full max-w-md space-y-8">
-                <div className="text-center">
-                    <div className="flex justify-center mb-4">
-                        <div className="p-3 bg-primary/10 border border-primary/20">
-                            <Shield className="w-10 h-10 text-primary" />
-                        </div>
-                    </div>
-                    <h1 className="text-3xl font-bold tracking-tight">PentestAI</h1>
-                    <p className="text-muted-foreground mt-2">AI-Enhanced Penetration Testing Platform</p>
-                </div>
-                <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
-                    <CardHeader>
-                        <CardTitle className="text-xl">Sign In</CardTitle>
-                        <CardDescription>Enter your credentials to access the platform</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {error && (
-                                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm" data-testid="login-error">
-                                    <AlertCircle className="w-4 h-4" />
-                                    {error}
-                                </div>
-                            )}
-                            <div className="space-y-2">
-                                <Label htmlFor="email">Email</Label>
-                                <Input id="email" type="email" placeholder="admin@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-background" data-testid="login-email-input" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="password">Password</Label>
-                                <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-background" data-testid="login-password-input" />
-                            </div>
-                            <Button type="submit" className="w-full" disabled={loading} data-testid="login-submit-button">
-                                {loading ? 'Signing in...' : 'Sign In'}
-                            </Button>
-                        </form>
-                        <div className="mt-6 text-center text-sm">
-                            <span className="text-muted-foreground">Don't have an account? </span>
-                            <Link to="/register" className="text-primary hover:underline" data-testid="register-link">Create one</Link>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
-    );
-}
-
-// Register Page
-function RegisterPage() {
-    const [email, setEmail] = useState('');
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
-    const { register } = useAuth();
-    const navigate = useNavigate();
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setError('');
-        if (password !== confirmPassword) {
-            setError('Passwords do not match');
-            return;
-        }
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters');
-            return;
-        }
-        setLoading(true);
-        try {
-            await register(email, password, username);
-            navigate('/dashboard');
-        } catch (err) {
-            setError(err.response?.data?.detail || 'Registration failed');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4" style={{ backgroundImage: 'linear-gradient(to right, rgba(128, 128, 128, 0.07) 1px, transparent 1px), linear-gradient(to bottom, rgba(128, 128, 128, 0.07) 1px, transparent 1px)', backgroundSize: '24px 24px' }}>
-            <div className="w-full max-w-md space-y-8">
-                <div className="text-center">
-                    <div className="flex justify-center mb-4">
-                        <div className="p-3 bg-primary/10 border border-primary/20">
-                            <Shield className="w-10 h-10 text-primary" />
-                        </div>
-                    </div>
-                    <h1 className="text-3xl font-bold tracking-tight">PentestAI</h1>
-                    <p className="text-muted-foreground mt-2">Create your account</p>
-                </div>
-                <Card className="border-border/40 bg-card/50 backdrop-blur-sm">
-                    <CardHeader>
-                        <CardTitle className="text-xl">Register</CardTitle>
-                        <CardDescription>Start your journey in ethical hacking</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            {error && (
-                                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm" data-testid="register-error">
-                                    <AlertCircle className="w-4 h-4" />
-                                    {error}
-                                </div>
-                            )}
-                            <div className="space-y-2">
-                                <Label htmlFor="username">Username</Label>
-                                <Input id="username" type="text" placeholder="hackerman" value={username} onChange={(e) => setUsername(e.target.value)} required className="bg-background" data-testid="register-username-input" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="email">Email</Label>
-                                <Input id="email" type="email" placeholder="admin@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required className="bg-background" data-testid="register-email-input" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="password">Password</Label>
-                                <Input id="password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required className="bg-background" data-testid="register-password-input" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="confirmPassword">Confirm Password</Label>
-                                <Input id="confirmPassword" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="bg-background" data-testid="register-confirm-password-input" />
-                            </div>
-                            <Button type="submit" className="w-full" disabled={loading} data-testid="register-submit-button">
-                                {loading ? 'Creating account...' : 'Create Account'}
-                            </Button>
-                        </form>
-                        <div className="mt-6 text-center text-sm">
-                            <span className="text-muted-foreground">Already have an account? </span>
-                            <Link to="/login" className="text-primary hover:underline" data-testid="login-link">Sign in</Link>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-        </div>
-    );
+function PublicRoute({ children }) {
+    const { isAuthenticated, loading } = useAuth();
+    if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return !isAuthenticated ? children : <Navigate to="/dashboard" replace />;
 }
 
 // Dashboard Page
 function DashboardPage() {
     const [stats, setStats] = useState({ total_scans: 0, active_scans: 0, vulnerabilities_found: 0, critical_alerts: 0, recent_activity: [] });
-    const [trends, setTrends] = useState([]);
 
-    useEffect(() => {
-        fetchDashboardData();
-    }, []);
+    useEffect(() => { fetchDashboardData(); }, []);
 
     const fetchDashboardData = async () => {
         try {
-            const [statsRes, trendsRes] = await Promise.all([
-                axios.get(`${API_URL}/api/dashboard/stats`),
-                axios.get(`${API_URL}/api/dashboard/vulnerability-trends`)
-            ]);
+            const statsRes = await axios.get(`${API_URL}/api/dashboard/stats`);
             setStats(statsRes.data);
-            setTrends(trendsRes.data.trends);
-        } catch (error) {
-            console.error('Failed to fetch dashboard data:', error);
-        }
+        } catch (error) { console.error('Failed to fetch dashboard data:', error); }
     };
-
-    const metricCards = [
-        { title: 'Total Scans', value: stats.total_scans, icon: Target, color: 'text-blue-400', bgColor: 'bg-blue-400/10', borderColor: 'border-l-blue-400' },
-        { title: 'Active Scans', value: stats.active_scans, icon: Activity, color: 'text-green-400', bgColor: 'bg-green-400/10', borderColor: 'border-l-green-400' },
-        { title: 'Vulnerabilities', value: stats.vulnerabilities_found, icon: Bug, color: 'text-yellow-400', bgColor: 'bg-yellow-400/10', borderColor: 'border-l-yellow-400' },
-        { title: 'Critical Alerts', value: stats.critical_alerts, icon: AlertTriangle, color: 'text-red-400', bgColor: 'bg-red-400/10', borderColor: 'border-l-red-400' },
-    ];
 
     return (
         <div className="flex-1 flex flex-col" data-testid="dashboard-page">
             <Header title="Dashboard" subtitle="Security Operations Overview" />
             <div className="flex-1 p-6 space-y-6 overflow-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {metricCards.map((metric, index) => {
-                        const Icon = metric.icon;
-                        return (
-                            <Card key={index} className={`border-l-2 ${metric.borderColor} bg-card/20 hover:bg-card/40 transition-colors`} data-testid={`metric-${metric.title.toLowerCase().replace(' ', '-')}`}>
-                                <CardContent className="p-6">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <p className="text-sm text-muted-foreground">{metric.title}</p>
-                                            <p className="text-3xl font-bold mt-1">{metric.value}</p>
-                                        </div>
-                                        <div className={`p-3 ${metric.bgColor}`}>
-                                            <Icon className={`w-6 h-6 ${metric.color}`} />
-                                        </div>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        );
-                    })}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <Card className="border-border/40 bg-card/20" data-testid="quick-actions">
-                        <CardHeader>
-                            <CardTitle className="text-lg font-semibold">Quick Actions</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                            <Button variant="outline" className="w-full justify-start gap-2" asChild>
-                                <Link to="/recon"><Target className="w-4 h-4" />New Reconnaissance Scan</Link>
-                            </Button>
-                            <Button variant="outline" className="w-full justify-start gap-2" asChild>
-                                <Link to="/vulnerabilities"><Bug className="w-4 h-4" />Vulnerability Assessment</Link>
-                            </Button>
-                            <Button variant="outline" className="w-full justify-start gap-2" asChild>
-                                <Link to="/assistant"><Shield className="w-4 h-4" />Ask AI Assistant</Link>
-                            </Button>
-                            <Button variant="outline" className="w-full justify-start gap-2" asChild>
-                                <Link to="/reports"><Activity className="w-4 h-4" />Generate Report</Link>
-                            </Button>
-                        </CardContent>
+                    <Card className="border-border/40 bg-card/20" data-testid="stat-total-scans">
+                        <CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Total Scans</p><p className="text-2xl font-bold">{stats.total_scans}</p></div><Target className="w-8 h-8 text-primary/50" /></div></CardContent>
                     </Card>
-                    <Card className="lg:col-span-2 border-border/40 bg-card/20" data-testid="recent-activity">
-                        <CardHeader>
-                            <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-4">
-                                {stats.recent_activity.length > 0 ? stats.recent_activity.map((activity, index) => (
-                                    <div key={index} className="flex items-center gap-4 p-3 bg-background/50 border border-border/20">
-                                        <div className="p-2 bg-primary/10"><Activity className="w-4 h-4 text-primary" /></div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium truncate">{activity.action}</p>
-                                            <p className="text-xs text-muted-foreground">{activity.target}</p>
-                                        </div>
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Clock className="w-3 h-3" />{new Date(activity.created_at).toLocaleTimeString()}
-                                        </div>
-                                    </div>
-                                )) : (
-                                    <div className="text-center py-8 text-muted-foreground">
-                                        <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                        <p>No recent activity</p>
-                                        <p className="text-sm">Start a scan to see activity here</p>
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
+                    <Card className="border-border/40 bg-card/20" data-testid="stat-active-scans">
+                        <CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Active Scans</p><p className="text-2xl font-bold">{stats.active_scans}</p></div><Activity className="w-8 h-8 text-green-500/50" /></div></CardContent>
+                    </Card>
+                    <Card className="border-border/40 bg-card/20" data-testid="stat-vulnerabilities">
+                        <CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Vulnerabilities</p><p className="text-2xl font-bold">{stats.vulnerabilities_found}</p></div><Bug className="w-8 h-8 text-yellow-500/50" /></div></CardContent>
+                    </Card>
+                    <Card className="border-border/40 bg-card/20" data-testid="stat-critical">
+                        <CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Critical Alerts</p><p className="text-2xl font-bold text-red-500">{stats.critical_alerts}</p></div><AlertTriangle className="w-8 h-8 text-red-500/50" /></div></CardContent>
                     </Card>
                 </div>
-            </div>
-        </div>
-    );
-}
 
-// AI Assistant Page
-function AssistantPage() {
-    const [messages, setMessages] = useState([
-        { role: 'assistant', content: 'Welcome to PentestAI! I can help you with reconnaissance, vulnerability assessment, network analysis, and more. How can I assist you today?' }
-    ]);
-    const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [sessionId, setSessionId] = useState(null);
-
-    const handleSend = async () => {
-        if (!input.trim() || loading) return;
-        const userMessage = input.trim();
-        setInput('');
-        setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-        setLoading(true);
-        try {
-            const response = await axios.post(`${API_URL}/api/chat`, { message: userMessage, session_id: sessionId });
-            setMessages(prev => [...prev, { role: 'assistant', content: response.data.response }]);
-            setSessionId(response.data.session_id);
-        } catch (error) {
-            toast.error('Failed to get response');
-            setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="flex-1 flex flex-col" data-testid="assistant-page">
-            <Header title="AI Assistant" subtitle="Your intelligent pentesting companion" />
-            <div className="flex-1 p-6 flex flex-col">
-                <Card className="flex-1 border-border/40 bg-card/20 flex flex-col overflow-hidden">
-                    <ScrollArea className="flex-1 p-4">
-                        <div className="space-y-4 max-w-4xl mx-auto">
-                            {messages.map((message, index) => (
-                                <div key={index} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`} data-testid={`message-${index}`}>
-                                    {message.role === 'assistant' && (
-                                        <div className="w-8 h-8 bg-primary/20 flex items-center justify-center flex-shrink-0">
-                                            <Bot className="w-4 h-4 text-primary" />
-                                        </div>
-                                    )}
-                                    <div className={`max-w-[80%] p-4 ${message.role === 'user' ? 'bg-primary/20 border border-primary/30' : 'bg-card border border-border/40'}`}>
-                                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                                    </div>
-                                    {message.role === 'user' && (
-                                        <div className="w-8 h-8 bg-secondary/20 flex items-center justify-center flex-shrink-0">
-                                            <User className="w-4 h-4 text-secondary" />
-                                        </div>
-                                    )}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <Card className="lg:col-span-2 border-border/40 bg-card/20">
+                        <CardHeader><CardTitle>Quick Actions</CardTitle></CardHeader>
+                        <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <Link to="/recon"><Button variant="outline" className="w-full h-20 flex-col gap-2"><Search className="w-6 h-6" /><span>New Recon</span></Button></Link>
+                            <Link to="/bulk-scan"><Button variant="outline" className="w-full h-20 flex-col gap-2"><Layers className="w-6 h-6" /><span>Bulk Scan</span></Button></Link>
+                            <Link to="/assistant"><Button variant="outline" className="w-full h-20 flex-col gap-2"><MessageSquare className="w-6 h-6" /><span>AI Assistant</span></Button></Link>
+                            <Link to="/reports"><Button variant="outline" className="w-full h-20 flex-col gap-2"><FileText className="w-6 h-6" /><span>Reports</span></Button></Link>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-border/40 bg-card/20">
+                        <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
+                        <CardContent className="space-y-3">
+                            {stats.recent_activity?.slice(0, 5).map((activity, i) => (
+                                <div key={i} className="flex items-start gap-3 p-2 bg-background/30 border border-border/20">
+                                    <Activity className="w-4 h-4 text-primary mt-0.5" />
+                                    <div className="flex-1 min-w-0"><p className="text-sm truncate">{activity.action}</p><p className="text-xs text-muted-foreground">{activity.target}</p></div>
                                 </div>
                             ))}
-                            {loading && (
-                                <div className="flex gap-3" data-testid="loading-indicator">
-                                    <div className="w-8 h-8 bg-primary/20 flex items-center justify-center flex-shrink-0">
-                                        <Bot className="w-4 h-4 text-primary" />
-                                    </div>
-                                    <div className="bg-card border border-border/40 p-4 flex items-center gap-2">
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        <span className="text-sm text-muted-foreground">Analyzing...</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </ScrollArea>
-                    <div className="border-t border-border/40 p-4">
-                        <div className="max-w-4xl mx-auto flex gap-2">
-                            <Input
-                                placeholder="Ask about reconnaissance, vulnerabilities, exploits..."
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                                disabled={loading}
-                                className="flex-1 bg-background"
-                                data-testid="chat-input"
-                            />
-                            <Button onClick={handleSend} disabled={!input.trim() || loading} data-testid="send-button">
-                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                            </Button>
-                        </div>
-                    </div>
-                </Card>
+                            {!stats.recent_activity?.length && <p className="text-sm text-muted-foreground text-center py-4">No recent activity</p>}
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
         </div>
     );
 }
 
-// Recon Page
+// Recon Page with Export
 function ReconPage() {
     const [target, setTarget] = useState('');
     const [loading, setLoading] = useState(false);
@@ -616,51 +147,70 @@ function ReconPage() {
         } catch (error) {
             toast.error('Failed to fetch CVE details');
             setCveData({ error: error.response?.data?.detail || 'Failed to fetch CVE details' });
-        } finally {
-            setCveLoading(false);
-        }
+        } finally { setCveLoading(false); }
+    };
+
+    const exportScan = async (scanId, format) => {
+        try {
+            const response = await axios.get(`${API_URL}/api/scans/${scanId}/export?format=${format}`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `scan_${scanId.slice(0, 8)}.${format}`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success(`Exported as ${format.toUpperCase()}`);
+        } catch (error) { toast.error('Export failed'); }
     };
 
     return (
         <div className="flex-1 flex flex-col" data-testid="recon-page">
-            <Header title="Reconnaissance" subtitle="Target discovery and information gathering" />
+            <Header title="Reconnaissance" subtitle="Network discovery and enumeration" />
             <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
                 <div className="space-y-4">
-                    <Card className="border-border/40 bg-card/20" data-testid="new-scan-card">
-                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Search className="w-5 h-5 text-primary" />New Scan</CardTitle></CardHeader>
+                    <Card className="border-border/40 bg-card/20">
+                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Target className="w-5 h-5 text-primary" />New Scan</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
                             <div className="space-y-2">
                                 <Label>Target</Label>
-                                <Input placeholder="example.com or 192.168.1.1" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="scan-target-input" />
+                                <Input placeholder="example.com or 192.168.1.1" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="recon-target-input" />
                             </div>
-                            <Button className="w-full" onClick={startScan} disabled={loading || !target.trim()} data-testid="start-scan-button">
+                            <Button className="w-full" onClick={startScan} disabled={loading} data-testid="start-scan-button">
                                 {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Scan</>}
                             </Button>
                         </CardContent>
                     </Card>
-                    <Card className="border-border/40 bg-card/20" data-testid="scan-history">
+                    <Card className="border-border/40 bg-card/20">
                         <CardHeader><CardTitle className="text-lg">Scan History</CardTitle></CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-64">
-                                <div className="p-4 space-y-2">
-                                    {scans.length > 0 ? scans.map((scan) => (
-                                        <button key={scan.id} onClick={() => setSelectedScan(scan)} className={`w-full text-left p-3 border border-border/40 hover:bg-accent transition-colors ${selectedScan?.id === scan.id ? 'bg-accent' : ''}`} data-testid={`scan-item-${scan.id}`}>
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-muted-foreground" /><span className="font-medium text-sm truncate max-w-32">{scan.target}</span></div>
-                                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                                            </div>
-                                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground"><Clock className="w-3 h-3" />{new Date(scan.created_at).toLocaleString()}</div>
-                                        </button>
-                                    )) : <div className="text-center py-8 text-muted-foreground"><Search className="w-8 h-8 mx-auto mb-2 opacity-50" /><p className="text-sm">No scans yet</p></div>}
-                                </div>
-                            </ScrollArea>
-                        </CardContent>
+                        <CardContent className="p-0"><ScrollArea className="h-64">
+                            <div className="p-4 space-y-2">
+                                {scans.map((scan) => (
+                                    <button key={scan.id} onClick={() => setSelectedScan(scan)} className={`w-full text-left p-3 border border-border/40 hover:bg-accent transition-colors ${selectedScan?.id === scan.id ? 'bg-accent' : ''}`} data-testid={`scan-item-${scan.id}`}>
+                                        <div className="flex items-center justify-between"><span className="font-medium text-sm truncate">{scan.target}</span><Badge variant="outline" className="border-green-500/30 text-green-400">{scan.status}</Badge></div>
+                                        <p className="text-xs text-muted-foreground mt-1">{new Date(scan.created_at).toLocaleString()}</p>
+                                    </button>
+                                ))}
+                            </div>
+                        </ScrollArea></CardContent>
                     </Card>
                 </div>
+
                 <div className="lg:col-span-2 overflow-hidden">
                     <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="scan-results">
-                        <CardHeader><CardTitle className="text-lg">{selectedScan ? `Results: ${selectedScan.target}` : 'Scan Results'}</CardTitle></CardHeader>
-                        <CardContent className="flex-1 overflow-auto">
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle className="text-lg">{selectedScan ? `Results: ${selectedScan.target}` : 'Scan Results'}</CardTitle>
+                            {selectedScan && (
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => exportScan(selectedScan.id, 'csv')} data-testid="export-csv"><FileDown className="w-4 h-4 mr-1" />CSV</Button>
+                                    <Button variant="outline" size="sm" onClick={() => exportScan(selectedScan.id, 'json')} data-testid="export-json"><FileDown className="w-4 h-4 mr-1" />JSON</Button>
+                                </div>
+                            )}
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-auto" data-testid="scan-results-content">
                             {selectedScan?.results ? (
                                 <div className="space-y-6">
                                     {/* Target Info */}
@@ -696,100 +246,16 @@ function ReconPage() {
                                         </div>
                                     )}
 
-                                    {/* DNS Records */}
-                                    {selectedScan.results.dns_records && selectedScan.results.dns_records.length > 0 && (
-                                        <div>
-                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400" />DNS Records ({selectedScan.results.dns_records.length})</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                {selectedScan.results.dns_records.map((record, i) => (
-                                                    <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between">
-                                                        <Badge variant="outline" className="mr-2">{record.type}</Badge>
-                                                        <span className="font-mono text-xs text-muted-foreground truncate flex-1">{record.value}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* WHOIS Info */}
-                                    {selectedScan.results.whois && selectedScan.results.whois.registrar && (
-                                        <div>
-                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-purple-400" />WHOIS Information</h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <div className="p-3 bg-background/50 border border-border/20">
-                                                    <p className="text-xs text-muted-foreground mb-1">Registrar</p>
-                                                    <p className="text-sm truncate">{selectedScan.results.whois.registrar}</p>
-                                                </div>
-                                                <div className="p-3 bg-background/50 border border-border/20">
-                                                    <p className="text-xs text-muted-foreground mb-1">Created</p>
-                                                    <p className="text-sm">{selectedScan.results.whois.creation_date}</p>
-                                                </div>
-                                                <div className="p-3 bg-background/50 border border-border/20">
-                                                    <p className="text-xs text-muted-foreground mb-1">Expires</p>
-                                                    <p className="text-sm">{selectedScan.results.whois.expiration_date}</p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
                                     {/* Shodan Intelligence */}
                                     {selectedScan.results.shodan && !selectedScan.results.shodan.error && (
                                         <div>
-                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                                                <Wifi className="w-4 h-4 text-cyan-400" />
-                                                Shodan Intelligence
-                                                <Badge variant="outline" className="ml-2 border-cyan-500/30 text-cyan-400 text-xs">OSINT</Badge>
-                                            </h3>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Wifi className="w-4 h-4 text-cyan-400" />Shodan Intelligence<Badge variant="outline" className="ml-2 border-cyan-500/30 text-cyan-400 text-xs">OSINT</Badge></h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
-                                                {selectedScan.results.shodan.organization && (
-                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
-                                                        <p className="text-xs text-muted-foreground mb-1">Organization</p>
-                                                        <p className="text-sm font-medium">{selectedScan.results.shodan.organization}</p>
-                                                    </div>
-                                                )}
-                                                {selectedScan.results.shodan.isp && (
-                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
-                                                        <p className="text-xs text-muted-foreground mb-1">ISP</p>
-                                                        <p className="text-sm">{selectedScan.results.shodan.isp}</p>
-                                                    </div>
-                                                )}
-                                                {selectedScan.results.shodan.asn && (
-                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
-                                                        <p className="text-xs text-muted-foreground mb-1">ASN</p>
-                                                        <p className="text-sm font-mono">{selectedScan.results.shodan.asn}</p>
-                                                    </div>
-                                                )}
-                                                {selectedScan.results.shodan.country && (
-                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
-                                                        <p className="text-xs text-muted-foreground mb-1">Location</p>
-                                                        <p className="text-sm">{selectedScan.results.shodan.city ? `${selectedScan.results.shodan.city}, ` : ''}{selectedScan.results.shodan.country}</p>
-                                                    </div>
-                                                )}
-                                                {selectedScan.results.shodan.last_update && (
-                                                    <div className="p-3 bg-cyan-500/5 border border-cyan-500/20">
-                                                        <p className="text-xs text-muted-foreground mb-1">Last Seen</p>
-                                                        <p className="text-sm">{new Date(selectedScan.results.shodan.last_update).toLocaleDateString()}</p>
-                                                    </div>
-                                                )}
+                                                {selectedScan.results.shodan.organization && <div className="p-3 bg-cyan-500/5 border border-cyan-500/20"><p className="text-xs text-muted-foreground mb-1">Organization</p><p className="text-sm font-medium">{selectedScan.results.shodan.organization}</p></div>}
+                                                {selectedScan.results.shodan.isp && <div className="p-3 bg-cyan-500/5 border border-cyan-500/20"><p className="text-xs text-muted-foreground mb-1">ISP</p><p className="text-sm">{selectedScan.results.shodan.isp}</p></div>}
+                                                {selectedScan.results.shodan.asn && <div className="p-3 bg-cyan-500/5 border border-cyan-500/20"><p className="text-xs text-muted-foreground mb-1">ASN</p><p className="text-sm font-mono">{selectedScan.results.shodan.asn}</p></div>}
+                                                {selectedScan.results.shodan.country && <div className="p-3 bg-cyan-500/5 border border-cyan-500/20"><p className="text-xs text-muted-foreground mb-1">Location</p><p className="text-sm">{selectedScan.results.shodan.city ? `${selectedScan.results.shodan.city}, ` : ''}{selectedScan.results.shodan.country}</p></div>}
                                             </div>
-                                            
-                                            {/* Shodan Services */}
-                                            {selectedScan.results.shodan.services && selectedScan.results.shodan.services.length > 0 && (
-                                                <div className="mt-4">
-                                                    <p className="text-xs text-muted-foreground uppercase mb-2">Detected Services ({selectedScan.results.shodan.services.length})</p>
-                                                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                                                        {selectedScan.results.shodan.services.slice(0, 10).map((svc, i) => (
-                                                            <div key={i} className="p-2 bg-background/50 border border-border/20 flex items-center justify-between text-sm">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-mono text-cyan-400">{svc.port}/{svc.transport}</span>
-                                                                    {svc.product && <span className="text-muted-foreground">{svc.product} {svc.version || ''}</span>}
-                                                                </div>
-                                                                {svc.module && <Badge variant="outline" className="text-xs">{svc.module}</Badge>}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
                                     )}
 
@@ -798,22 +264,13 @@ function ReconPage() {
                                         <div>
                                             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" />Vulnerabilities ({selectedScan.results.vulnerabilities.length})</h3>
                                             <div className="space-y-2">
-                                                {selectedScan.results.vulnerabilities.map((vuln, i) => (
+                                                {selectedScan.results.vulnerabilities.slice(0, 20).map((vuln, i) => (
                                                     <div key={i} className="p-3 bg-background/50 border border-border/20 hover:bg-background/70 transition-colors">
                                                         <div className="flex items-center justify-between mb-2">
                                                             <div className="flex items-center gap-2">
                                                                 {vuln.id.startsWith('CVE-') ? (
-                                                                    <button 
-                                                                        onClick={() => fetchCveDetails(vuln.id)}
-                                                                        className="font-mono text-sm text-primary hover:underline flex items-center gap-1"
-                                                                        data-testid={`cve-link-${vuln.id}`}
-                                                                    >
-                                                                        {vuln.id}
-                                                                        <Info className="w-3 h-3" />
-                                                                    </button>
-                                                                ) : (
-                                                                    <span className="font-mono text-sm text-primary">{vuln.id}</span>
-                                                                )}
+                                                                    <button onClick={() => fetchCveDetails(vuln.id)} className="font-mono text-sm text-primary hover:underline flex items-center gap-1" data-testid={`cve-link-${vuln.id}`}>{vuln.id}<Info className="w-3 h-3" /></button>
+                                                                ) : (<span className="font-mono text-sm text-primary">{vuln.id}</span>)}
                                                                 {vuln.source === 'shodan' && <Badge variant="outline" className="text-xs border-cyan-500/30 text-cyan-400">Shodan</Badge>}
                                                             </div>
                                                             <div className="flex items-center gap-2">
@@ -828,16 +285,6 @@ function ReconPage() {
                                             </div>
                                         </div>
                                     )}
-
-                                    {/* No results message */}
-                                    {(!selectedScan.results.ports || selectedScan.results.ports.length === 0) && 
-                                     (!selectedScan.results.vulnerabilities || selectedScan.results.vulnerabilities.length === 0) && (
-                                        <div className="text-center py-8 text-muted-foreground">
-                                            <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
-                                            <p>No open ports or vulnerabilities detected</p>
-                                            <p className="text-sm">Target appears secure or ports are filtered</p>
-                                        </div>
-                                    )}
                                 </div>
                             ) : <div className="h-full flex items-center justify-center text-muted-foreground"><div className="text-center"><Search className="w-12 h-12 mx-auto mb-4 opacity-30" /><p>Select a scan or start a new one</p></div></div>}
                         </CardContent>
@@ -849,481 +296,42 @@ function ReconPage() {
             <Dialog open={cveModalOpen} onOpenChange={setCveModalOpen}>
                 <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <Bug className="w-5 h-5 text-red-500" />
-                            {selectedCve}
-                        </DialogTitle>
+                        <DialogTitle className="flex items-center gap-2"><Bug className="w-5 h-5 text-red-500" />{selectedCve}</DialogTitle>
                         <DialogDescription>Vulnerability details from National Vulnerability Database</DialogDescription>
                     </DialogHeader>
-                    
                     {cveLoading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                        </div>
+                        <div className="flex items-center justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                     ) : cveData?.error ? (
-                        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400">
-                            {cveData.error}
-                        </div>
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400">{cveData.error}</div>
                     ) : cveData ? (
                         <div className="space-y-4">
-                            {/* Severity & Score */}
                             <div className="flex items-center gap-4">
-                                <Badge className={
-                                    cveData.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-400 text-lg px-3 py-1' :
-                                    cveData.severity === 'HIGH' ? 'bg-orange-500/20 text-orange-400 text-lg px-3 py-1' :
-                                    cveData.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400 text-lg px-3 py-1' :
-                                    'bg-green-500/20 text-green-400 text-lg px-3 py-1'
-                                }>{cveData.severity}</Badge>
+                                <Badge className={cveData.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-400 text-lg px-3 py-1' : cveData.severity === 'HIGH' ? 'bg-orange-500/20 text-orange-400 text-lg px-3 py-1' : cveData.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400 text-lg px-3 py-1' : 'bg-green-500/20 text-green-400 text-lg px-3 py-1'}>{cveData.severity}</Badge>
                                 {cveData.score && <span className="text-2xl font-bold">{cveData.score}</span>}
                             </div>
-
-                            {/* Description */}
-                            <div>
-                                <h4 className="text-sm font-semibold mb-2">Description</h4>
-                                <p className="text-sm text-muted-foreground">{cveData.description}</p>
-                            </div>
-
-                            {/* CVSS Details */}
-                            {cveData.cvss_v3 && (
-                                <div>
-                                    <h4 className="text-sm font-semibold mb-2">CVSS v{cveData.cvss_v3.version} Metrics</h4>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                                        {cveData.cvss_v3.attack_vector && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Attack Vector:</span> <span className="font-medium">{cveData.cvss_v3.attack_vector}</span></div>}
-                                        {cveData.cvss_v3.attack_complexity && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Complexity:</span> <span className="font-medium">{cveData.cvss_v3.attack_complexity}</span></div>}
-                                        {cveData.cvss_v3.privileges_required && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Privileges:</span> <span className="font-medium">{cveData.cvss_v3.privileges_required}</span></div>}
-                                        {cveData.cvss_v3.user_interaction && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">User Interaction:</span> <span className="font-medium">{cveData.cvss_v3.user_interaction}</span></div>}
-                                        {cveData.cvss_v3.confidentiality_impact && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Confidentiality:</span> <span className="font-medium">{cveData.cvss_v3.confidentiality_impact}</span></div>}
-                                        {cveData.cvss_v3.integrity_impact && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Integrity:</span> <span className="font-medium">{cveData.cvss_v3.integrity_impact}</span></div>}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Affected Products */}
+                            <div><h4 className="text-sm font-semibold mb-2">Description</h4><p className="text-sm text-muted-foreground">{cveData.description}</p></div>
                             {cveData.affected_products && cveData.affected_products.length > 0 && (
-                                <div>
-                                    <h4 className="text-sm font-semibold mb-2">Affected Products ({cveData.affected_products.length})</h4>
+                                <div><h4 className="text-sm font-semibold mb-2">Affected Products ({cveData.affected_products.length})</h4>
                                     <div className="space-y-1 max-h-32 overflow-y-auto">
                                         {cveData.affected_products.slice(0, 10).map((product, i) => (
-                                            <div key={i} className="text-xs p-2 bg-background/50 border border-border/20">
-                                                <span className="font-medium">{product.vendor}</span> / <span>{product.product}</span>
-                                                {(product.version_start || product.version_end) && (
-                                                    <span className="text-muted-foreground ml-2">
-                                                        ({product.version_start && `>= ${product.version_start}`} {product.version_end && `< ${product.version_end}`})
-                                                    </span>
-                                                )}
-                                            </div>
+                                            <div key={i} className="text-xs p-2 bg-background/50 border border-border/20"><span className="font-medium">{product.vendor}</span> / <span>{product.product}</span></div>
                                         ))}
                                     </div>
                                 </div>
                             )}
-
-                            {/* Weaknesses */}
-                            {cveData.weaknesses && cveData.weaknesses.length > 0 && (
-                                <div>
-                                    <h4 className="text-sm font-semibold mb-2">Weaknesses (CWE)</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {cveData.weaknesses.map((cwe, i) => (
-                                            <Badge key={i} variant="outline">{cwe}</Badge>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* References */}
                             {cveData.references && cveData.references.length > 0 && (
-                                <div>
-                                    <h4 className="text-sm font-semibold mb-2">References</h4>
+                                <div><h4 className="text-sm font-semibold mb-2">References</h4>
                                     <div className="space-y-1 max-h-32 overflow-y-auto">
                                         {cveData.references.slice(0, 5).map((ref, i) => (
-                                            <a 
-                                                key={i} 
-                                                href={ref.url} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="text-xs text-primary hover:underline flex items-center gap-1 truncate"
-                                            >
-                                                <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                                {ref.url}
-                                            </a>
+                                            <a key={i} href={ref.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 truncate"><ExternalLink className="w-3 h-3 flex-shrink-0" />{ref.url}</a>
                                         ))}
                                     </div>
                                 </div>
                             )}
-
-                            {/* Dates */}
-                            <div className="flex gap-4 text-xs text-muted-foreground pt-2 border-t border-border/20">
-                                {cveData.published && <span>Published: {new Date(cveData.published).toLocaleDateString()}</span>}
-                                {cveData.last_modified && <span>Modified: {new Date(cveData.last_modified).toLocaleDateString()}</span>}
-                            </div>
                         </div>
                     ) : null}
                 </DialogContent>
             </Dialog>
-        </div>
-    );
-}
-
-// Vulnerabilities Page
-function VulnerabilitiesPage() {
-    const [target, setTarget] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [scans, setScans] = useState([]);
-    const [selectedScan, setSelectedScan] = useState(null);
-
-    useEffect(() => { fetchScans(); }, []);
-
-    const fetchScans = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/api/scans`);
-            setScans(response.data.filter(s => s.scan_type === 'vuln'));
-        } catch (error) { console.error('Failed to fetch scans:', error); }
-    };
-
-    const startScan = async () => {
-        if (!target.trim()) { toast.error('Please enter a target'); return; }
-        setLoading(true);
-        try {
-            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'vuln', target: target.trim(), options: {} });
-            toast.success('Vulnerability scan completed');
-            setScans(prev => [response.data, ...prev]);
-            setSelectedScan(response.data);
-            setTarget('');
-        } catch (error) { toast.error('Scan failed'); } 
-        finally { setLoading(false); }
-    };
-
-    const vulnerabilities = selectedScan?.results?.vulnerabilities || [];
-
-    return (
-        <div className="flex-1 flex flex-col" data-testid="vulnerabilities-page">
-            <Header title="Vulnerability Assessment" subtitle="Identify and analyze security vulnerabilities" />
-            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
-                <div className="space-y-4">
-                    <Card className="border-border/40 bg-card/20" data-testid="vuln-scan-card">
-                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Bug className="w-5 h-5 text-primary" />Vulnerability Scan</CardTitle></CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="space-y-2">
-                                <Label>Target</Label>
-                                <Input placeholder="example.com or IP" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="vuln-target-input" />
-                            </div>
-                            <Button className="w-full" onClick={startScan} disabled={loading || !target.trim()} data-testid="start-vuln-scan-button">
-                                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning...</> : <><Play className="w-4 h-4 mr-2" />Start Assessment</>}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                </div>
-                <div className="lg:col-span-2 overflow-hidden">
-                    <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="vuln-results">
-                        <CardHeader><CardTitle className="text-lg">{selectedScan ? `Vulnerabilities: ${selectedScan.target}` : 'Assessment Results'}</CardTitle></CardHeader>
-                        <CardContent className="flex-1 overflow-auto">
-                            {vulnerabilities.length > 0 ? (
-                                <div className="space-y-3">
-                                    {vulnerabilities.map((vuln, i) => (
-                                        <div key={i} className="p-4 bg-background/50 border border-border/20 space-y-3" data-testid={`vulnerability-${i}`}>
-                                            <div className="flex items-start justify-between">
-                                                <span className="font-mono text-sm font-medium">{vuln.id}</span>
-                                                <Badge>{vuln.severity?.toUpperCase()}</Badge>
-                                            </div>
-                                            <p className="text-sm">{vuln.description}</p>
-                                            {vuln.remediation && <div className="p-2 bg-green-500/10 border border-green-500/20 text-sm"><span className="text-green-400 font-medium">Remediation: </span>{vuln.remediation}</div>}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : <div className="h-full flex items-center justify-center text-muted-foreground"><Bug className="w-12 h-12 mx-auto mb-4 opacity-30" /><p>Start a vulnerability assessment</p></div>}
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Network Page
-function NetworkPage() {
-    const [target, setTarget] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [scans, setScans] = useState([]);
-    const [selectedScan, setSelectedScan] = useState(null);
-
-    useEffect(() => { fetchScans(); }, []);
-
-    const fetchScans = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/api/scans`);
-            setScans(response.data.filter(s => s.scan_type === 'network'));
-        } catch (error) { console.error('Failed to fetch scans:', error); }
-    };
-
-    const startScan = async () => {
-        if (!target.trim()) { toast.error('Please enter a target'); return; }
-        setLoading(true);
-        try {
-            const response = await axios.post(`${API_URL}/api/scans`, { scan_type: 'network', target: target.trim(), options: {} });
-            toast.success('Network analysis completed');
-            setScans(prev => [response.data, ...prev]);
-            setSelectedScan(response.data);
-            setTarget('');
-        } catch (error) { toast.error('Analysis failed'); } 
-        finally { setLoading(false); }
-    };
-
-    const results = selectedScan?.results;
-
-    return (
-        <div className="flex-1 flex flex-col" data-testid="network-page">
-            <Header title="Network Analysis" subtitle="Traffic inspection and anomaly detection" />
-            <div className="flex-1 p-6 space-y-6 overflow-auto">
-                <Card className="border-border/40 bg-card/20" data-testid="network-scan-card">
-                    <CardContent className="p-6">
-                        <div className="flex flex-col md:flex-row gap-4">
-                            <div className="flex-1 space-y-2">
-                                <Label>Network/IP Range</Label>
-                                <Input placeholder="192.168.1.0/24" value={target} onChange={(e) => setTarget(e.target.value)} className="bg-background" data-testid="network-target-input" />
-                            </div>
-                            <div className="flex items-end">
-                                <Button onClick={startScan} disabled={loading || !target.trim()} data-testid="start-network-scan-button">
-                                    {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</> : <><Play className="w-4 h-4 mr-2" />Start Analysis</>}
-                                </Button>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                {results && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <Card className="border-border/40 bg-card/20" data-testid="traffic-summary">
-                            <CardHeader><CardTitle className="text-lg">Traffic Summary</CardTitle></CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    <div className="p-3 bg-background/50 border border-border/20">
-                                        <p className="text-sm text-muted-foreground">Total Packets</p>
-                                        <p className="text-2xl font-bold">{results.traffic_summary?.total_packets?.toLocaleString()}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card className="border-border/40 bg-card/20" data-testid="anomalies-card">
-                            <CardHeader><CardTitle className="text-lg">Anomalies Detected</CardTitle></CardHeader>
-                            <CardContent>
-                                {results.anomalies?.length > 0 ? (
-                                    <div className="space-y-2">
-                                        {results.anomalies.map((anomaly, i) => (
-                                            <div key={i} className="p-3 bg-background/50 border border-border/20">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-sm font-medium">{anomaly.type}</span>
-                                                    <Badge>{anomaly.severity}</Badge>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : <p className="text-muted-foreground text-sm">No anomalies detected</p>}
-                            </CardContent>
-                        </Card>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// Terminal Page
-function TerminalPage() {
-    const [input, setInput] = useState('');
-    const [history, setHistory] = useState([
-        { type: 'system', content: 'PentestAI Terminal v1.0.0' },
-        { type: 'system', content: 'Type "help" for available commands.' }
-    ]);
-    const [loading, setLoading] = useState(false);
-
-    const handleCommand = async (cmd) => {
-        const command = cmd.trim().toLowerCase();
-        setHistory(prev => [...prev, { type: 'input', content: `$ ${cmd}` }]);
-
-        if (command === 'help') {
-            setHistory(prev => [...prev, { type: 'output', content: 'Commands: help, clear, scan <target>, vuln <target>, ai <query>' }]);
-            return;
-        }
-        if (command === 'clear') {
-            setHistory([{ type: 'system', content: 'Terminal cleared.' }]);
-            return;
-        }
-        if (command.startsWith('ai ')) {
-            const query = command.slice(3);
-            setLoading(true);
-            try {
-                const response = await axios.post(`${API_URL}/api/chat`, { message: query });
-                setHistory(prev => [...prev, { type: 'ai', content: response.data.response }]);
-            } catch (error) {
-                setHistory(prev => [...prev, { type: 'error', content: 'AI Error: ' + error.message }]);
-            } finally { setLoading(false); }
-            return;
-        }
-        setHistory(prev => [...prev, { type: 'error', content: `Command not found: ${command}` }]);
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (!input.trim() || loading) return;
-        handleCommand(input);
-        setInput('');
-    };
-
-    return (
-        <div className="flex-1 flex flex-col" data-testid="terminal-page">
-            <Header title="Terminal" subtitle="Command-line interface with AI assistance" />
-            <div className="flex-1 p-6">
-                <Card className="h-full border-border/40 bg-black flex flex-col overflow-hidden" data-testid="terminal-container">
-                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border/20 bg-zinc-950">
-                        <div className="flex gap-1.5">
-                            <div className="w-3 h-3 rounded-full bg-red-500" />
-                            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                            <div className="w-3 h-3 rounded-full bg-green-500" />
-                        </div>
-                        <span className="text-sm text-muted-foreground font-mono ml-2">pentestai@localhost</span>
-                    </div>
-                    <ScrollArea className="flex-1 p-4 font-mono text-sm">
-                        <div className="space-y-1">
-                            {history.map((line, i) => (
-                                <div key={i} className={`whitespace-pre-wrap ${line.type === 'system' ? 'text-blue-400' : line.type === 'input' ? 'text-white' : line.type === 'output' ? 'text-green-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai' ? 'text-purple-400' : 'text-foreground'}`}>
-                                    {line.content}
-                                </div>
-                            ))}
-                            {loading && <div className="text-muted-foreground">Processing...</div>}
-                        </div>
-                    </ScrollArea>
-                    <form onSubmit={handleSubmit} className="flex items-center gap-2 p-4 border-t border-border/20 bg-zinc-950">
-                        <span className="text-primary font-mono">$</span>
-                        <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Enter command..." className="flex-1 bg-transparent border-none focus-visible:ring-0 font-mono text-sm text-white" disabled={loading} data-testid="terminal-input" />
-                        <Button type="submit" size="sm" disabled={loading || !input.trim()} data-testid="terminal-submit"><Send className="w-4 h-4" /></Button>
-                    </form>
-                </Card>
-            </div>
-        </div>
-    );
-}
-
-// Reports Page
-function ReportsPage() {
-    const [scans, setScans] = useState([]);
-    const [selectedScans, setSelectedScans] = useState([]);
-    const [reports, setReports] = useState([]);
-    const [generatingReport, setGeneratingReport] = useState(false);
-    const [downloadingPdf, setDownloadingPdf] = useState(null);
-
-    useEffect(() => { fetchData(); }, []);
-
-    const fetchData = async () => {
-        try {
-            const [scansRes, reportsRes] = await Promise.all([axios.get(`${API_URL}/api/scans`), axios.get(`${API_URL}/api/reports`)]);
-            setScans(scansRes.data);
-            setReports(reportsRes.data.reports || []);
-        } catch (error) { console.error('Failed to fetch data:', error); }
-    };
-
-    const toggleScanSelection = (scanId) => {
-        setSelectedScans(prev => prev.includes(scanId) ? prev.filter(id => id !== scanId) : [...prev, scanId]);
-    };
-
-    const generateReport = async () => {
-        if (selectedScans.length === 0) { toast.error('Please select at least one scan'); return; }
-        setGeneratingReport(true);
-        try {
-            const response = await axios.post(`${API_URL}/api/reports/generate`, selectedScans);
-            toast.success('Report generated successfully');
-            setReports(prev => [response.data, ...prev]);
-            setSelectedScans([]);
-        } catch (error) { toast.error('Failed to generate report'); } 
-        finally { setGeneratingReport(false); }
-    };
-
-    const downloadPdf = async (reportId) => {
-        setDownloadingPdf(reportId);
-        try {
-            const response = await axios.get(`${API_URL}/api/reports/${reportId}/pdf`, {
-                responseType: 'blob'
-            });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `security_report_${reportId.slice(0, 8)}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
-            toast.success('PDF downloaded');
-        } catch (error) {
-            toast.error('Failed to download PDF');
-        } finally {
-            setDownloadingPdf(null);
-        }
-    };
-
-    return (
-        <div className="flex-1 flex flex-col" data-testid="reports-page">
-            <Header title="Reports" subtitle="Generate and manage security reports" />
-            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
-                <Card className="border-border/40 bg-card/20 flex flex-col" data-testid="scans-selection">
-                    <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-lg">Select Scans</CardTitle><Badge variant="outline">{selectedScans.length} selected</Badge></CardHeader>
-                    <CardContent className="flex-1 overflow-hidden flex flex-col">
-                        <ScrollArea className="flex-1">
-                            <div className="space-y-2 pr-4">
-                                {scans.map((scan) => (
-                                    <div key={scan.id} className={`p-4 border border-border/40 cursor-pointer transition-colors ${selectedScans.includes(scan.id) ? 'bg-accent border-primary/50' : 'hover:bg-accent/50'}`} onClick={() => toggleScanSelection(scan.id)} data-testid={`scan-select-${scan.id}`}>
-                                        <div className="flex items-start gap-3">
-                                            <Checkbox checked={selectedScans.includes(scan.id)} />
-                                            <div className="flex-1"><span className="font-medium text-sm">{scan.target}</span><p className="text-xs text-muted-foreground">{scan.scan_type} - {new Date(scan.created_at).toLocaleDateString()}</p></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </ScrollArea>
-                        <div className="pt-4 border-t border-border/40 mt-4">
-                            <Button className="w-full" onClick={generateReport} disabled={selectedScans.length === 0 || generatingReport} data-testid="generate-report-button">
-                                {generatingReport ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</> : <><FileText className="w-4 h-4 mr-2" />Generate Report</>}
-                            </Button>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="border-border/40 bg-card/20 flex flex-col" data-testid="reports-list">
-                    <CardHeader><CardTitle className="text-lg">Generated Reports</CardTitle></CardHeader>
-                    <CardContent className="flex-1 overflow-hidden">
-                        <ScrollArea className="h-full">
-                            <div className="space-y-4 pr-4">
-                                {reports.map((report) => (
-                                    <Card key={report.id} className="border-border/40 bg-background/50" data-testid={`report-${report.id}`}>
-                                        <CardContent className="p-4">
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div>
-                                                    <h3 className="font-medium text-sm">{report.title}</h3>
-                                                    <p className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()}</p>
-                                                </div>
-                                                <Button 
-                                                    variant="outline" 
-                                                    size="sm" 
-                                                    onClick={() => downloadPdf(report.id)}
-                                                    disabled={downloadingPdf === report.id}
-                                                    data-testid={`download-pdf-${report.id}`}
-                                                >
-                                                    {downloadingPdf === report.id ? (
-                                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                                    ) : (
-                                                        <><Download className="w-4 h-4 mr-1" />PDF</>
-                                                    )}
-                                                </Button>
-                                            </div>
-                                            <div className="grid grid-cols-4 gap-2 mt-3">
-                                                <div className="p-2 bg-red-500/10 text-center"><p className="text-lg font-bold text-red-400">{report.summary?.critical || 0}</p><p className="text-xs">Critical</p></div>
-                                                <div className="p-2 bg-orange-500/10 text-center"><p className="text-lg font-bold text-orange-400">{report.summary?.high || 0}</p><p className="text-xs">High</p></div>
-                                                <div className="p-2 bg-yellow-500/10 text-center"><p className="text-lg font-bold text-yellow-400">{report.summary?.medium || 0}</p><p className="text-xs">Medium</p></div>
-                                                <div className="p-2 bg-green-500/10 text-center"><p className="text-lg font-bold text-green-400">{report.summary?.low || 0}</p><p className="text-xs">Low</p></div>
-                                            </div>
-                                        </CardContent>
-                                    </Card>
-                                ))}
-                            </div>
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
-            </div>
         </div>
     );
 }
@@ -1339,128 +347,46 @@ function BulkScanPage() {
     const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef(null);
 
-    useEffect(() => { fetchBulkScans(); }, []);
+    useEffect(() => { fetchBulkScans(); return () => { if (wsRef.current) wsRef.current.close(); }; }, []);
 
-    // WebSocket connection for real-time progress
     const connectWebSocket = useCallback((scanId) => {
-        if (wsRef.current) {
-            wsRef.current.close();
-        }
-        
+        if (wsRef.current) wsRef.current.close();
         const wsUrl = API_URL.replace('https://', 'wss://').replace('http://', 'ws://');
         const ws = new WebSocket(`${wsUrl}/api/ws/scan/${scanId}`);
-        
-        ws.onopen = () => {
-            setWsConnected(true);
-            console.log('WebSocket connected for scan:', scanId);
-        };
-        
+        ws.onopen = () => { setWsConnected(true); };
         ws.onmessage = (event) => {
             const data = JSON.parse(event.data);
-            console.log('WS message:', data);
-            
             if (data.type === 'progress' || data.type === 'completed' || data.type === 'started') {
-                // Update bulkScans list
-                setBulkScans(prev => prev.map(s => 
-                    s.id === scanId ? {
-                        ...s,
-                        completed: data.completed,
-                        failed: data.failed,
-                        status: data.status,
-                        results: data.type === 'progress' && s.results 
-                            ? [...s.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean)
-                            : s.results
-                    } : s
-                ));
-                
-                // Update selectedBulkScan using functional update to avoid stale closure
-                setSelectedBulkScan(prev => {
-                    if (prev?.id === scanId) {
-                        return {
-                            ...prev,
-                            completed: data.completed,
-                            failed: data.failed,
-                            status: data.status,
-                            results: data.type === 'progress' && prev.results
-                                ? [...prev.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean)
-                                : prev.results
-                        };
-                    }
-                    return prev;
-                });
-                
-                if (data.type === 'completed') {
-                    toast.success('Bulk scan completed');
-                    fetchBulkScans();
-                }
+                setBulkScans(prev => prev.map(s => s.id === scanId ? { ...s, completed: data.completed, failed: data.failed, status: data.status, results: data.type === 'progress' && s.results ? [...s.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean) : s.results } : s));
+                setSelectedBulkScan(prev => prev?.id === scanId ? { ...prev, completed: data.completed, failed: data.failed, status: data.status, results: data.type === 'progress' && prev.results ? [...prev.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean) : prev.results } : prev);
+                if (data.type === 'completed') { toast.success('Bulk scan completed'); fetchBulkScans(); }
             }
         };
-        
-        ws.onclose = () => {
-            setWsConnected(false);
-            console.log('WebSocket disconnected');
-        };
-        
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-        
+        ws.onclose = () => { setWsConnected(false); };
         wsRef.current = ws;
-    }, []); // Empty deps - no stale closure issues
-
-    // Cleanup WebSocket on unmount
-    useEffect(() => {
-        return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
-        };
     }, []);
 
     const fetchBulkScans = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/api/bulk-scans`);
-            setBulkScans(response.data.bulk_scans || []);
-        } catch (error) { console.error('Failed to fetch bulk scans:', error); }
+        try { const response = await axios.get(`${API_URL}/api/bulk-scans`); setBulkScans(response.data.bulk_scans || []); } catch (error) { console.error('Failed:', error); }
     };
 
     const startBulkScan = async () => {
         const targetList = targets.split('\n').map(t => t.trim()).filter(t => t);
-        if (!targetList.length && !cidr.trim()) {
-            toast.error('Please enter targets or CIDR range');
-            return;
-        }
+        if (!targetList.length && !cidr.trim()) { toast.error('Please enter targets or CIDR range'); return; }
         setLoading(true);
         try {
-            const response = await axios.post(`${API_URL}/api/bulk-scans`, {
-                scan_type: scanType,
-                targets: targetList,
-                cidr: cidr.trim() || null
-            });
+            const response = await axios.post(`${API_URL}/api/bulk-scans`, { scan_type: scanType, targets: targetList, cidr: cidr.trim() || null });
             toast.success(`Bulk scan started for ${response.data.total_targets} targets`);
             const newScan = { ...response.data, results: [] };
             setBulkScans(prev => [newScan, ...prev]);
             setSelectedBulkScan(newScan);
-            setTargets('');
-            setCidr('');
-            
-            // Connect WebSocket for real-time updates
+            setTargets(''); setCidr('');
             connectWebSocket(response.data.id);
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to start bulk scan');
-        } finally {
-            setLoading(false);
-        }
+        } catch (error) { toast.error(error.response?.data?.detail || 'Failed to start bulk scan'); } finally { setLoading(false); }
     };
 
     const refreshBulkScan = async (id) => {
-        try {
-            const response = await axios.get(`${API_URL}/api/bulk-scans/${id}`);
-            setBulkScans(prev => prev.map(s => s.id === id ? response.data : s));
-            if (selectedBulkScan?.id === id) {
-                setSelectedBulkScan(response.data);
-            }
-        } catch (error) { console.error('Failed to refresh:', error); }
+        try { const response = await axios.get(`${API_URL}/api/bulk-scans/${id}`); setBulkScans(prev => prev.map(s => s.id === id ? response.data : s)); if (selectedBulkScan?.id === id) setSelectedBulkScan(response.data); } catch (error) { console.error('Failed:', error); }
     };
 
     return (
@@ -1471,136 +397,37 @@ function BulkScanPage() {
                     <Card className="border-border/40 bg-card/20" data-testid="bulk-scan-form">
                         <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Layers className="w-5 h-5 text-primary" />New Bulk Scan</CardTitle></CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="space-y-2">
-                                <Label>Targets (one per line)</Label>
-                                <Textarea 
-                                    placeholder="example.com&#10;192.168.1.1&#10;target.org" 
-                                    value={targets} 
-                                    onChange={(e) => setTargets(e.target.value)} 
-                                    className="bg-background min-h-24 font-mono text-sm"
-                                    data-testid="bulk-targets-input"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Or CIDR Range</Label>
-                                <Input 
-                                    placeholder="192.168.1.0/24" 
-                                    value={cidr} 
-                                    onChange={(e) => setCidr(e.target.value)} 
-                                    className="bg-background font-mono"
-                                    data-testid="cidr-input"
-                                />
-                                <p className="text-xs text-muted-foreground">Max /24 (256 hosts)</p>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Scan Type</Label>
-                                <Select value={scanType} onValueChange={setScanType}>
-                                    <SelectTrigger className="bg-background" data-testid="scan-type-select">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="recon">Reconnaissance</SelectItem>
-                                        <SelectItem value="vuln">Vulnerability</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <Button className="w-full" onClick={startBulkScan} disabled={loading} data-testid="start-bulk-scan-button">
-                                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</> : <><Play className="w-4 h-4 mr-2" />Start Bulk Scan</>}
-                            </Button>
+                            <div className="space-y-2"><Label>Targets (one per line)</Label><Textarea placeholder="example.com&#10;192.168.1.1&#10;target.org" value={targets} onChange={(e) => setTargets(e.target.value)} className="bg-background min-h-24 font-mono text-sm" data-testid="bulk-targets-input" /></div>
+                            <div className="space-y-2"><Label>Or CIDR Range</Label><Input placeholder="192.168.1.0/24" value={cidr} onChange={(e) => setCidr(e.target.value)} className="bg-background font-mono" data-testid="cidr-input" /><p className="text-xs text-muted-foreground">Max /24 (256 hosts)</p></div>
+                            <div className="space-y-2"><Label>Scan Type</Label><Select value={scanType} onValueChange={setScanType}><SelectTrigger className="bg-background" data-testid="scan-type-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="recon">Reconnaissance</SelectItem><SelectItem value="vuln">Vulnerability</SelectItem></SelectContent></Select></div>
+                            <Button className="w-full" onClick={startBulkScan} disabled={loading} data-testid="start-bulk-scan-button">{loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</> : <><Play className="w-4 h-4 mr-2" />Start Bulk Scan</>}</Button>
                         </CardContent>
                     </Card>
-
                     <Card className="border-border/40 bg-card/20" data-testid="bulk-scan-history">
                         <CardHeader><CardTitle className="text-lg">Bulk Scan History</CardTitle></CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-48">
-                                <div className="p-4 space-y-2">
-                                    {bulkScans.length > 0 ? bulkScans.map((scan) => (
-                                        <button 
-                                            key={scan.id} 
-                                            onClick={() => { setSelectedBulkScan(scan); refreshBulkScan(scan.id); }}
-                                            className={`w-full text-left p-3 border border-border/40 hover:bg-accent transition-colors ${selectedBulkScan?.id === scan.id ? 'bg-accent' : ''}`}
-                                            data-testid={`bulk-scan-${scan.id}`}
-                                        >
-                                            <div className="flex items-center justify-between">
-                                                <span className="font-medium text-sm">{scan.total_targets} targets</span>
-                                                <Badge variant="outline" className={scan.status === 'completed' ? 'border-green-500/30 text-green-400' : scan.status === 'running' ? 'border-blue-500/30 text-blue-400' : 'border-yellow-500/30 text-yellow-400'}>
-                                                    {scan.status}
-                                                </Badge>
-                                            </div>
-                                            <div className="text-xs text-muted-foreground mt-1">{scan.scan_type} • {new Date(scan.created_at).toLocaleString()}</div>
-                                            {scan.status === 'running' && (
-                                                <Progress value={(scan.completed / scan.total_targets) * 100} className="mt-2 h-1" />
-                                            )}
-                                        </button>
-                                    )) : (
-                                        <div className="text-center py-4 text-muted-foreground text-sm">No bulk scans yet</div>
-                                    )}
-                                </div>
-                            </ScrollArea>
-                        </CardContent>
+                        <CardContent className="p-0"><ScrollArea className="h-48"><div className="p-4 space-y-2">
+                            {bulkScans.length > 0 ? bulkScans.map((scan) => (
+                                <button key={scan.id} onClick={() => { setSelectedBulkScan(scan); refreshBulkScan(scan.id); }} className={`w-full text-left p-3 border border-border/40 hover:bg-accent transition-colors ${selectedBulkScan?.id === scan.id ? 'bg-accent' : ''}`} data-testid={`bulk-scan-${scan.id}`}>
+                                    <div className="flex items-center justify-between"><span className="font-medium text-sm">{scan.total_targets} targets</span><Badge variant="outline" className={scan.status === 'completed' ? 'border-green-500/30 text-green-400' : scan.status === 'running' ? 'border-blue-500/30 text-blue-400' : 'border-yellow-500/30 text-yellow-400'}>{scan.status}</Badge></div>
+                                    <div className="text-xs text-muted-foreground mt-1">{scan.scan_type} • {new Date(scan.created_at).toLocaleString()}</div>
+                                    {scan.status === 'running' && <Progress value={(scan.completed / scan.total_targets) * 100} className="mt-2 h-1" />}
+                                </button>
+                            )) : <div className="text-center py-4 text-muted-foreground text-sm">No bulk scans yet</div>}
+                        </div></ScrollArea></CardContent>
                     </Card>
                 </div>
-
                 <div className="lg:col-span-2 overflow-hidden">
                     <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="bulk-scan-results">
                         <CardHeader className="flex flex-row items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <CardTitle className="text-lg">
-                                    {selectedBulkScan ? `Results: ${selectedBulkScan.completed || 0}/${selectedBulkScan.total_targets} completed` : 'Bulk Scan Results'}
-                                </CardTitle>
-                                {wsConnected && selectedBulkScan?.status === 'running' && (
-                                    <Badge variant="outline" className="border-green-500/30 text-green-400 animate-pulse">
-                                        <Wifi className="w-3 h-3 mr-1" /> Live
-                                    </Badge>
-                                )}
-                            </div>
-                            {selectedBulkScan && (
-                                <Button variant="outline" size="sm" onClick={() => refreshBulkScan(selectedBulkScan.id)} data-testid="refresh-bulk-scan">
-                                    <RefreshCw className="w-4 h-4" />
-                                </Button>
-                            )}
+                            <div className="flex items-center gap-3"><CardTitle className="text-lg">{selectedBulkScan ? `Results: ${selectedBulkScan.completed || 0}/${selectedBulkScan.total_targets} completed` : 'Bulk Scan Results'}</CardTitle>{wsConnected && selectedBulkScan?.status === 'running' && <Badge variant="outline" className="border-green-500/30 text-green-400 animate-pulse"><Wifi className="w-3 h-3 mr-1" /> Live</Badge>}</div>
+                            {selectedBulkScan && <Button variant="outline" size="sm" onClick={() => refreshBulkScan(selectedBulkScan.id)} data-testid="refresh-bulk-scan"><RefreshCw className="w-4 h-4" /></Button>}
                         </CardHeader>
-                        {selectedBulkScan?.status === 'running' && (
-                            <div className="px-6 pb-2">
-                                <Progress value={(selectedBulkScan.completed / selectedBulkScan.total_targets) * 100} className="h-2" />
-                                <p className="text-xs text-muted-foreground mt-1 text-center">
-                                    {Math.round((selectedBulkScan.completed / selectedBulkScan.total_targets) * 100)}% complete
-                                    {selectedBulkScan.failed > 0 && ` • ${selectedBulkScan.failed} failed`}
-                                </p>
-                            </div>
-                        )}
+                        {selectedBulkScan?.status === 'running' && <div className="px-6 pb-2"><Progress value={(selectedBulkScan.completed / selectedBulkScan.total_targets) * 100} className="h-2" /><p className="text-xs text-muted-foreground mt-1 text-center">{Math.round((selectedBulkScan.completed / selectedBulkScan.total_targets) * 100)}% complete{selectedBulkScan.failed > 0 && ` • ${selectedBulkScan.failed} failed`}</p></div>}
                         <CardContent className="flex-1 overflow-auto">
                             {selectedBulkScan?.results && selectedBulkScan.results.length > 0 ? (
-                                <div className="space-y-2">
-                                    {selectedBulkScan.results.map((result, i) => (
-                                        <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between animate-in fade-in duration-300">
-                                            <div>
-                                                <span className="font-mono text-sm">{result.target}</span>
-                                                {result.vulnerabilities_count > 0 && (
-                                                    <Badge variant="outline" className="ml-2 text-xs">{result.vulnerabilities_count} vulns</Badge>
-                                                )}
-                                            </div>
-                                            <Badge className={result.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
-                                                {result.status}
-                                            </Badge>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : selectedBulkScan?.status === 'running' ? (
-                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                                    <Loader2 className="w-12 h-12 animate-spin mb-4 text-primary" />
-                                    <p>Scanning in progress...</p>
-                                    <p className="text-sm">{selectedBulkScan.completed} of {selectedBulkScan.total_targets} completed</p>
-                                </div>
-                            ) : (
-                                <div className="h-full flex items-center justify-center text-muted-foreground">
-                                    <div className="text-center">
-                                        <Layers className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                                        <p>Select a bulk scan to view results</p>
-                                    </div>
-                                </div>
-                            )}
+                                <div className="space-y-2">{selectedBulkScan.results.map((result, i) => (<div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between animate-in fade-in duration-300"><div><span className="font-mono text-sm">{result.target}</span>{result.vulnerabilities_count > 0 && <Badge variant="outline" className="ml-2 text-xs">{result.vulnerabilities_count} vulns</Badge>}</div><Badge className={result.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>{result.status}</Badge></div>))}</div>
+                            ) : selectedBulkScan?.status === 'running' ? (<div className="h-full flex flex-col items-center justify-center text-muted-foreground"><Loader2 className="w-12 h-12 animate-spin mb-4 text-primary" /><p>Scanning in progress...</p><p className="text-sm">{selectedBulkScan.completed} of {selectedBulkScan.total_targets} completed</p></div>
+                            ) : (<div className="h-full flex items-center justify-center text-muted-foreground"><div className="text-center"><Layers className="w-12 h-12 mx-auto mb-4 opacity-30" /><p>Select a bulk scan to view results</p></div></div>)}
                         </CardContent>
                     </Card>
                 </div>
@@ -1613,74 +440,26 @@ function BulkScanPage() {
 function ScheduledScansPage() {
     const [scheduledScans, setScheduledScans] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
-    const [formData, setFormData] = useState({
-        name: '',
-        scan_type: 'recon',
-        targets: '',
-        schedule_type: 'daily',
-        schedule_time: '09:00',
-        schedule_day: 0
-    });
+    const [formData, setFormData] = useState({ name: '', scan_type: 'recon', targets: '', schedule_type: 'daily', schedule_time: '09:00', schedule_day: 0 });
     const [loading, setLoading] = useState(false);
 
     useEffect(() => { fetchScheduledScans(); }, []);
 
-    const fetchScheduledScans = async () => {
-        try {
-            const response = await axios.get(`${API_URL}/api/scheduled-scans`);
-            setScheduledScans(response.data.scheduled_scans || []);
-        } catch (error) { console.error('Failed to fetch scheduled scans:', error); }
-    };
+    const fetchScheduledScans = async () => { try { const response = await axios.get(`${API_URL}/api/scheduled-scans`); setScheduledScans(response.data.scheduled_scans || []); } catch (error) { console.error('Failed:', error); } };
 
     const createScheduledScan = async () => {
         const targetList = formData.targets.split('\n').map(t => t.trim()).filter(t => t);
-        if (!formData.name.trim() || !targetList.length) {
-            toast.error('Please fill in name and targets');
-            return;
-        }
+        if (!formData.name.trim() || !targetList.length) { toast.error('Please fill in name and targets'); return; }
         setLoading(true);
         try {
-            await axios.post(`${API_URL}/api/scheduled-scans`, {
-                name: formData.name.trim(),
-                scan_type: formData.scan_type,
-                targets: targetList,
-                schedule_type: formData.schedule_type,
-                schedule_time: formData.schedule_time,
-                schedule_day: formData.schedule_type !== 'daily' ? parseInt(formData.schedule_day) : null
-            });
-            toast.success('Scheduled scan created');
-            setShowCreateModal(false);
-            setFormData({ name: '', scan_type: 'recon', targets: '', schedule_type: 'daily', schedule_time: '09:00', schedule_day: 0 });
-            fetchScheduledScans();
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Failed to create scheduled scan');
-        } finally {
-            setLoading(false);
-        }
+            await axios.post(`${API_URL}/api/scheduled-scans`, { name: formData.name.trim(), scan_type: formData.scan_type, targets: targetList, schedule_type: formData.schedule_type, schedule_time: formData.schedule_time, schedule_day: formData.schedule_type !== 'daily' ? parseInt(formData.schedule_day) : null });
+            toast.success('Scheduled scan created'); setShowCreateModal(false); setFormData({ name: '', scan_type: 'recon', targets: '', schedule_type: 'daily', schedule_time: '09:00', schedule_day: 0 }); fetchScheduledScans();
+        } catch (error) { toast.error(error.response?.data?.detail || 'Failed'); } finally { setLoading(false); }
     };
 
-    const toggleSchedule = async (id, enabled) => {
-        try {
-            await axios.patch(`${API_URL}/api/scheduled-scans/${id}?enabled=${!enabled}`);
-            fetchScheduledScans();
-            toast.success(enabled ? 'Schedule disabled' : 'Schedule enabled');
-        } catch (error) { toast.error('Failed to update schedule'); }
-    };
-
-    const deleteSchedule = async (id) => {
-        try {
-            await axios.delete(`${API_URL}/api/scheduled-scans/${id}`);
-            fetchScheduledScans();
-            toast.success('Schedule deleted');
-        } catch (error) { toast.error('Failed to delete schedule'); }
-    };
-
-    const runNow = async (id) => {
-        try {
-            await axios.post(`${API_URL}/api/scheduled-scans/${id}/run`);
-            toast.success('Scan started');
-        } catch (error) { toast.error('Failed to start scan'); }
-    };
+    const toggleSchedule = async (id, enabled) => { try { await axios.patch(`${API_URL}/api/scheduled-scans/${id}?enabled=${!enabled}`); fetchScheduledScans(); toast.success(enabled ? 'Schedule disabled' : 'Schedule enabled'); } catch (error) { toast.error('Failed'); } };
+    const deleteSchedule = async (id) => { try { await axios.delete(`${API_URL}/api/scheduled-scans/${id}`); fetchScheduledScans(); toast.success('Schedule deleted'); } catch (error) { toast.error('Failed'); } };
+    const runNow = async (id) => { try { await axios.post(`${API_URL}/api/scheduled-scans/${id}/run`); toast.success('Scan started'); } catch (error) { toast.error('Failed'); } };
 
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -1689,162 +468,49 @@ function ScheduledScansPage() {
             <Header title="Scheduled Scans" subtitle="Automate recurring security scans" />
             <div className="flex-1 p-6 overflow-auto">
                 <div className="max-w-4xl mx-auto space-y-6">
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <h2 className="text-xl font-semibold">Your Schedules</h2>
-                            <p className="text-sm text-muted-foreground">{scheduledScans.length} scheduled scan{scheduledScans.length !== 1 ? 's' : ''}</p>
-                        </div>
-                        <Button onClick={() => setShowCreateModal(true)} data-testid="create-schedule-button">
-                            <Plus className="w-4 h-4 mr-2" />New Schedule
-                        </Button>
-                    </div>
-
+                    <div className="flex justify-between items-center"><div><h2 className="text-xl font-semibold">Your Schedules</h2><p className="text-sm text-muted-foreground">{scheduledScans.length} scheduled scan{scheduledScans.length !== 1 ? 's' : ''}</p></div><Button onClick={() => setShowCreateModal(true)} data-testid="create-schedule-button"><Plus className="w-4 h-4 mr-2" />New Schedule</Button></div>
                     <div className="space-y-4">
                         {scheduledScans.length > 0 ? scheduledScans.map((schedule) => (
                             <Card key={schedule.id} className="border-border/40 bg-card/20" data-testid={`schedule-${schedule.id}`}>
                                 <CardContent className="p-4">
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <h3 className="font-semibold">{schedule.name}</h3>
-                                                <Badge variant="outline">{schedule.scan_type}</Badge>
-                                                <Badge className={schedule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
-                                                    {schedule.enabled ? 'Active' : 'Paused'}
-                                                </Badge>
-                                            </div>
+                                            <div className="flex items-center gap-3 mb-2"><h3 className="font-semibold">{schedule.name}</h3><Badge variant="outline">{schedule.scan_type}</Badge><Badge className={schedule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>{schedule.enabled ? 'Active' : 'Paused'}</Badge></div>
                                             <div className="text-sm text-muted-foreground space-y-1">
-                                                <div className="flex items-center gap-2">
-                                                    <Timer className="w-4 h-4" />
-                                                    {schedule.schedule_type === 'daily' && `Daily at ${schedule.schedule_time}`}
-                                                    {schedule.schedule_type === 'weekly' && `Weekly on ${dayNames[schedule.schedule_day]} at ${schedule.schedule_time}`}
-                                                    {schedule.schedule_type === 'monthly' && `Monthly on day ${schedule.schedule_day} at ${schedule.schedule_time}`}
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Target className="w-4 h-4" />
-                                                    {schedule.targets.length} target{schedule.targets.length !== 1 ? 's' : ''}: {schedule.targets.slice(0, 3).join(', ')}{schedule.targets.length > 3 ? '...' : ''}
-                                                </div>
-                                                {schedule.next_run && schedule.enabled && (
-                                                    <div className="flex items-center gap-2">
-                                                        <Clock className="w-4 h-4" />
-                                                        Next run: {new Date(schedule.next_run).toLocaleString()}
-                                                    </div>
-                                                )}
+                                                <div className="flex items-center gap-2"><Timer className="w-4 h-4" />{schedule.schedule_type === 'daily' && `Daily at ${schedule.schedule_time}`}{schedule.schedule_type === 'weekly' && `Weekly on ${dayNames[schedule.schedule_day]} at ${schedule.schedule_time}`}{schedule.schedule_type === 'monthly' && `Monthly on day ${schedule.schedule_day} at ${schedule.schedule_time}`}</div>
+                                                <div className="flex items-center gap-2"><Target className="w-4 h-4" />{schedule.targets.length} target{schedule.targets.length !== 1 ? 's' : ''}: {schedule.targets.slice(0, 3).join(', ')}{schedule.targets.length > 3 ? '...' : ''}</div>
+                                                {schedule.next_run && schedule.enabled && <div className="flex items-center gap-2"><Clock className="w-4 h-4" />Next run: {new Date(schedule.next_run).toLocaleString()}</div>}
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <Button variant="outline" size="sm" onClick={() => runNow(schedule.id)} data-testid={`run-now-${schedule.id}`}>
-                                                <Play className="w-4 h-4" />
-                                            </Button>
+                                            <Button variant="outline" size="sm" onClick={() => runNow(schedule.id)} data-testid={`run-now-${schedule.id}`}><Play className="w-4 h-4" /></Button>
                                             <Switch checked={schedule.enabled} onCheckedChange={() => toggleSchedule(schedule.id, schedule.enabled)} data-testid={`toggle-${schedule.id}`} />
-                                            <Button variant="ghost" size="sm" onClick={() => deleteSchedule(schedule.id)} className="text-red-400 hover:text-red-300" data-testid={`delete-${schedule.id}`}>
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
+                                            <Button variant="ghost" size="sm" onClick={() => deleteSchedule(schedule.id)} className="text-red-400 hover:text-red-300" data-testid={`delete-${schedule.id}`}><Trash2 className="w-4 h-4" /></Button>
                                         </div>
                                     </div>
                                 </CardContent>
                             </Card>
-                        )) : (
-                            <Card className="border-border/40 bg-card/20">
-                                <CardContent className="p-8 text-center">
-                                    <Timer className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" />
-                                    <p className="text-muted-foreground">No scheduled scans yet</p>
-                                    <p className="text-sm text-muted-foreground">Create a schedule to automate your security scans</p>
-                                </CardContent>
-                            </Card>
-                        )}
+                        )) : <Card className="border-border/40 bg-card/20"><CardContent className="p-8 text-center"><Timer className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" /><p className="text-muted-foreground">No scheduled scans yet</p></CardContent></Card>}
                     </div>
                 </div>
             </div>
 
-            {/* Create Schedule Modal */}
             <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
                 <DialogContent className="max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Create Scheduled Scan</DialogTitle>
-                        <DialogDescription>Set up automatic recurring scans</DialogDescription>
-                    </DialogHeader>
+                    <DialogHeader><DialogTitle>Create Scheduled Scan</DialogTitle><DialogDescription>Set up automatic recurring scans</DialogDescription></DialogHeader>
                     <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label>Schedule Name</Label>
-                            <Input 
-                                placeholder="Weekly Security Audit" 
-                                value={formData.name} 
-                                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                                className="bg-background"
-                                data-testid="schedule-name-input"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Targets (one per line)</Label>
-                            <Textarea 
-                                placeholder="example.com&#10;192.168.1.1" 
-                                value={formData.targets} 
-                                onChange={(e) => setFormData({...formData, targets: e.target.value})}
-                                className="bg-background min-h-20 font-mono text-sm"
-                                data-testid="schedule-targets-input"
-                            />
+                        <div className="space-y-2"><Label>Schedule Name</Label><Input placeholder="Weekly Security Audit" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="bg-background" data-testid="schedule-name-input" /></div>
+                        <div className="space-y-2"><Label>Targets (one per line)</Label><Textarea placeholder="example.com&#10;192.168.1.1" value={formData.targets} onChange={(e) => setFormData({...formData, targets: e.target.value})} className="bg-background min-h-20 font-mono text-sm" data-testid="schedule-targets-input" /></div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2"><Label>Scan Type</Label><Select value={formData.scan_type} onValueChange={(v) => setFormData({...formData, scan_type: v})}><SelectTrigger className="bg-background"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="recon">Reconnaissance</SelectItem><SelectItem value="vuln">Vulnerability</SelectItem></SelectContent></Select></div>
+                            <div className="space-y-2"><Label>Frequency</Label><Select value={formData.schedule_type} onValueChange={(v) => setFormData({...formData, schedule_type: v})}><SelectTrigger className="bg-background"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="daily">Daily</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="monthly">Monthly</SelectItem></SelectContent></Select></div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>Scan Type</Label>
-                                <Select value={formData.scan_type} onValueChange={(v) => setFormData({...formData, scan_type: v})}>
-                                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="recon">Reconnaissance</SelectItem>
-                                        <SelectItem value="vuln">Vulnerability</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Frequency</Label>
-                                <Select value={formData.schedule_type} onValueChange={(v) => setFormData({...formData, schedule_type: v})}>
-                                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="daily">Daily</SelectItem>
-                                        <SelectItem value="weekly">Weekly</SelectItem>
-                                        <SelectItem value="monthly">Monthly</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
+                            <div className="space-y-2"><Label>Time (UTC)</Label><Input type="time" value={formData.schedule_time} onChange={(e) => setFormData({...formData, schedule_time: e.target.value})} className="bg-background" /></div>
+                            {formData.schedule_type === 'weekly' && <div className="space-y-2"><Label>Day of Week</Label><Select value={formData.schedule_day.toString()} onValueChange={(v) => setFormData({...formData, schedule_day: parseInt(v)})}><SelectTrigger className="bg-background"><SelectValue /></SelectTrigger><SelectContent>{dayNames.map((day, i) => <SelectItem key={i} value={i.toString()}>{day}</SelectItem>)}</SelectContent></Select></div>}
+                            {formData.schedule_type === 'monthly' && <div className="space-y-2"><Label>Day of Month</Label><Input type="number" min="1" max="28" value={formData.schedule_day || 1} onChange={(e) => setFormData({...formData, schedule_day: parseInt(e.target.value)})} className="bg-background" /></div>}
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label>Time (UTC)</Label>
-                                <Input 
-                                    type="time" 
-                                    value={formData.schedule_time} 
-                                    onChange={(e) => setFormData({...formData, schedule_time: e.target.value})}
-                                    className="bg-background"
-                                />
-                            </div>
-                            {formData.schedule_type === 'weekly' && (
-                                <div className="space-y-2">
-                                    <Label>Day of Week</Label>
-                                    <Select value={formData.schedule_day.toString()} onValueChange={(v) => setFormData({...formData, schedule_day: parseInt(v)})}>
-                                        <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            {dayNames.map((day, i) => <SelectItem key={i} value={i.toString()}>{day}</SelectItem>)}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            )}
-                            {formData.schedule_type === 'monthly' && (
-                                <div className="space-y-2">
-                                    <Label>Day of Month</Label>
-                                    <Input 
-                                        type="number" 
-                                        min="1" 
-                                        max="28" 
-                                        value={formData.schedule_day || 1} 
-                                        onChange={(e) => setFormData({...formData, schedule_day: parseInt(e.target.value)})}
-                                        className="bg-background"
-                                    />
-                                </div>
-                            )}
-                        </div>
-                        <Button className="w-full" onClick={createScheduledScan} disabled={loading} data-testid="save-schedule-button">
-                            {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : 'Create Schedule'}
-                        </Button>
+                        <Button className="w-full" onClick={createScheduledScan} disabled={loading} data-testid="save-schedule-button">{loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : 'Create Schedule'}</Button>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -1852,74 +518,203 @@ function ScheduledScansPage() {
     );
 }
 
-// Settings Page
-function SettingsPage() {
-    const { user } = useAuth();
-    const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
-
-    const toggleTheme = () => {
-        const newTheme = theme === 'dark' ? 'light' : 'dark';
-        setTheme(newTheme);
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.classList.remove('light', 'dark');
-        document.documentElement.classList.add(newTheme);
-    };
-
+// Vulnerabilities Page
+function VulnerabilitiesPage() {
+    const [scans, setScans] = useState([]);
+    useEffect(() => { const fetchScans = async () => { try { const response = await axios.get(`${API_URL}/api/scans`); setScans(response.data.filter(s => s.scan_type === 'vuln')); } catch (error) { console.error('Failed:', error); } }; fetchScans(); }, []);
     return (
-        <div className="flex-1 flex flex-col" data-testid="settings-page">
-            <Header title="Settings" subtitle="Manage your preferences and account" />
+        <div className="flex-1 flex flex-col" data-testid="vulnerabilities-page">
+            <Header title="Vulnerabilities" subtitle="Security vulnerability assessment" />
             <div className="flex-1 p-6 overflow-auto">
-                <div className="max-w-3xl mx-auto space-y-6">
-                    <Card className="border-border/40 bg-card/20" data-testid="appearance-settings">
-                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Palette className="w-5 h-5 text-primary" />Appearance</CardTitle></CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div><Label>Theme</Label><p className="text-sm text-muted-foreground">Switch between dark and light mode</p></div>
-                                <div className="flex items-center gap-2">
-                                    <Sun className="w-4 h-4 text-muted-foreground" />
-                                    <Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} data-testid="theme-switch" />
-                                    <Moon className="w-4 h-4 text-muted-foreground" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-border/40 bg-card/20" data-testid="account-settings">
-                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Shield className="w-5 h-5 text-primary" />Account</CardTitle></CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2"><Label>Username</Label><Input value={user?.username || ''} disabled className="bg-background" /></div>
-                                <div className="space-y-2"><Label>Email</Label><Input value={user?.email || ''} disabled className="bg-background" /></div>
-                            </div>
-                            <div className="space-y-2"><Label>Role</Label><Input value={user?.role || 'tester'} disabled className="bg-background capitalize" /></div>
-                        </CardContent>
-                    </Card>
-                    <div className="flex justify-end"><Button onClick={() => toast.success('Settings saved')} data-testid="save-settings-button">Save Settings</Button></div>
-                </div>
+                <Card className="border-border/40 bg-card/20"><CardHeader><CardTitle>Vulnerability Scans</CardTitle></CardHeader><CardContent>
+                    {scans.length > 0 ? scans.map((scan) => (<div key={scan.id} className="p-3 mb-2 border border-border/40"><div className="flex items-center justify-between"><span className="font-medium">{scan.target}</span><Badge>{scan.status}</Badge></div><p className="text-sm text-muted-foreground">{scan.results?.vulnerabilities?.length || 0} vulnerabilities found</p></div>)) : <p className="text-muted-foreground text-center py-8">No vulnerability scans yet. Start one from the Recon page.</p>}
+                </CardContent></Card>
             </div>
         </div>
     );
 }
 
-// Protected Route
-function ProtectedRoute({ children }) {
-    const { isAuthenticated, loading } = useAuth();
-    if (loading) return <div className="min-h-screen flex items-center justify-center bg-background"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
-    return isAuthenticated ? children : <Navigate to="/login" replace />;
-}
-
-// Public Route
-function PublicRoute({ children }) {
-    const { isAuthenticated, loading } = useAuth();
-    if (loading) return null;
-    return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
-}
-
-// Main Layout
-function MainLayout({ children }) {
+// Network Page
+function NetworkPage() {
     return (
-        <div className="flex min-h-screen bg-background" data-testid="main-layout">
-            <Sidebar />
-            <main className="flex-1 flex flex-col overflow-hidden">{children}</main>
+        <div className="flex-1 flex flex-col" data-testid="network-page">
+            <Header title="Network Analysis" subtitle="Traffic monitoring and analysis" />
+            <div className="flex-1 p-6 overflow-auto">
+                <Card className="border-border/40 bg-card/20"><CardContent className="p-8 text-center"><Network className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" /><p className="text-muted-foreground">Network analysis requires elevated privileges</p><p className="text-sm text-muted-foreground">Use Wireshark or tcpdump with proper authorization</p></CardContent></Card>
+            </div>
+        </div>
+    );
+}
+
+// AI Assistant Page
+function AssistantPage() {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [sessionId, setSessionId] = useState(null);
+
+    const sendMessage = async () => {
+        if (!input.trim() || loading) return;
+        const userMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, userMessage]);
+        setInput(''); setLoading(true);
+        try {
+            const response = await axios.post(`${API_URL}/api/ai/chat`, { message: input, session_id: sessionId });
+            setMessages(prev => [...prev, { role: 'assistant', content: response.data.response }]);
+            if (response.data.session_id) setSessionId(response.data.session_id);
+        } catch (error) { toast.error('Failed to send message'); setMessages(prev => prev.slice(0, -1)); }
+        finally { setLoading(false); }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="assistant-page">
+            <Header title="AI Assistant" subtitle="Claude-powered security assistant" />
+            <div className="flex-1 flex flex-col p-6 overflow-hidden">
+                <Card className="flex-1 flex flex-col border-border/40 bg-card/20 overflow-hidden">
+                    <CardContent className="flex-1 overflow-auto p-4">
+                        {messages.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground"><Bot className="w-16 h-16 mb-4 opacity-30" /><p className="text-lg font-medium">How can I help you today?</p><p className="text-sm">Ask about reconnaissance, vulnerabilities, or security best practices</p></div>
+                        ) : (
+                            <div className="space-y-4">{messages.map((msg, i) => (<div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}><div className={`max-w-[80%] p-3 ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}><p className="text-sm whitespace-pre-wrap">{msg.content}</p></div></div>))}{loading && <div className="flex gap-3"><div className="p-3 bg-muted"><Loader2 className="w-4 h-4 animate-spin" /></div></div>}</div>
+                        )}
+                    </CardContent>
+                    <div className="p-4 border-t border-border/40">
+                        <div className="flex gap-2"><Input placeholder="Ask about security, vulnerabilities, tools..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()} className="bg-background" data-testid="chat-input" /><Button onClick={sendMessage} disabled={loading} data-testid="send-message"><Send className="w-4 h-4" /></Button></div>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+// Terminal Page
+function TerminalPage() {
+    const [command, setCommand] = useState('');
+    const [history, setHistory] = useState([{ type: 'output', content: 'PentestAI Terminal v1.0\nType "help" for available commands or "ai <query>" for AI assistance.\n' }]);
+    const [loading, setLoading] = useState(false);
+
+    const executeCommand = async () => {
+        if (!command.trim()) return;
+        setHistory(prev => [...prev, { type: 'input', content: `$ ${command}` }]);
+        const cmd = command.trim(); setCommand(''); setLoading(true);
+        try {
+            if (cmd.startsWith('ai ')) {
+                const response = await axios.post(`${API_URL}/api/ai/chat`, { message: cmd.slice(3) });
+                setHistory(prev => [...prev, { type: 'output', content: response.data.response }]);
+            } else if (cmd === 'help') {
+                setHistory(prev => [...prev, { type: 'output', content: 'Available commands:\n  ai <query> - Ask AI assistant\n  clear - Clear terminal\n  help - Show this help' }]);
+            } else if (cmd === 'clear') { setHistory([{ type: 'output', content: 'Terminal cleared.\n' }]); }
+            else { setHistory(prev => [...prev, { type: 'output', content: `Command not found: ${cmd}\nType "help" for available commands.` }]); }
+        } catch (error) { setHistory(prev => [...prev, { type: 'error', content: 'Error executing command' }]); }
+        finally { setLoading(false); }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="terminal-page">
+            <Header title="Terminal" subtitle="Command-line interface" />
+            <div className="flex-1 p-6">
+                <Card className="h-full border-border/40 bg-black/50 font-mono text-sm flex flex-col">
+                    <CardContent className="flex-1 overflow-auto p-4">
+                        {history.map((item, i) => (<div key={i} className={item.type === 'error' ? 'text-red-400' : item.type === 'input' ? 'text-green-400' : 'text-gray-300'}><pre className="whitespace-pre-wrap">{item.content}</pre></div>))}
+                        {loading && <div className="text-yellow-400"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Processing...</div>}
+                    </CardContent>
+                    <div className="p-4 border-t border-border/40 flex items-center gap-2">
+                        <span className="text-green-400">$</span>
+                        <Input value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && executeCommand()} className="bg-transparent border-none focus-visible:ring-0 text-gray-300" placeholder="Enter command..." data-testid="terminal-input" />
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+// Reports Page with PDF Download
+function ReportsPage() {
+    const [scans, setScans] = useState([]);
+    const [selectedScans, setSelectedScans] = useState([]);
+    const [reports, setReports] = useState([]);
+    const [generatingReport, setGeneratingReport] = useState(false);
+    const [downloadingPdf, setDownloadingPdf] = useState(null);
+
+    useEffect(() => { fetchData(); }, []);
+
+    const fetchData = async () => {
+        try { const [scansRes, reportsRes] = await Promise.all([axios.get(`${API_URL}/api/scans`), axios.get(`${API_URL}/api/reports`)]); setScans(scansRes.data); setReports(reportsRes.data.reports || []); } catch (error) { console.error('Failed:', error); }
+    };
+
+    const toggleScanSelection = (scanId) => { setSelectedScans(prev => prev.includes(scanId) ? prev.filter(id => id !== scanId) : [...prev, scanId]); };
+
+    const generateReport = async () => {
+        if (selectedScans.length === 0) { toast.error('Please select at least one scan'); return; }
+        setGeneratingReport(true);
+        try { const response = await axios.post(`${API_URL}/api/reports/generate`, selectedScans); toast.success('Report generated'); setReports(prev => [response.data, ...prev]); setSelectedScans([]); } catch (error) { toast.error('Failed'); } finally { setGeneratingReport(false); }
+    };
+
+    const downloadPdf = async (reportId) => {
+        setDownloadingPdf(reportId);
+        try {
+            const response = await axios.get(`${API_URL}/api/reports/${reportId}/pdf`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a'); link.href = url; link.setAttribute('download', `security_report_${reportId.slice(0, 8)}.pdf`);
+            document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url);
+            toast.success('PDF downloaded');
+        } catch (error) { toast.error('Failed'); } finally { setDownloadingPdf(null); }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="reports-page">
+            <Header title="Reports" subtitle="Generate and export security reports" />
+            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-hidden">
+                <Card className="border-border/40 bg-card/20 flex flex-col">
+                    <CardHeader><CardTitle>Select Scans</CardTitle><CardDescription>Choose scans to include in report</CardDescription></CardHeader>
+                    <CardContent className="flex-1 overflow-auto"><div className="space-y-2">
+                        {scans.map((scan) => (<label key={scan.id} className="flex items-center gap-3 p-3 border border-border/40 hover:bg-accent cursor-pointer"><Checkbox checked={selectedScans.includes(scan.id)} onCheckedChange={() => toggleScanSelection(scan.id)} /><div className="flex-1"><p className="font-medium text-sm">{scan.target}</p><p className="text-xs text-muted-foreground">{scan.scan_type} • {new Date(scan.created_at).toLocaleDateString()}</p></div></label>))}
+                    </div></CardContent>
+                    <div className="p-4 border-t border-border/40"><Button className="w-full" onClick={generateReport} disabled={generatingReport || selectedScans.length === 0}>{generatingReport ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</> : 'Generate Report'}</Button></div>
+                </Card>
+                <Card className="border-border/40 bg-card/20 flex flex-col">
+                    <CardHeader><CardTitle>Generated Reports</CardTitle></CardHeader>
+                    <CardContent className="flex-1 overflow-auto"><div className="space-y-4">
+                        {reports.length > 0 ? reports.map((report) => (
+                            <Card key={report.id} className="border-border/40 bg-background/50" data-testid={`report-${report.id}`}>
+                                <CardContent className="p-4">
+                                    <div className="flex items-start justify-between mb-2">
+                                        <div><h3 className="font-medium text-sm">{report.title}</h3><p className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()}</p></div>
+                                        <Button variant="outline" size="sm" onClick={() => downloadPdf(report.id)} disabled={downloadingPdf === report.id} data-testid={`download-pdf-${report.id}`}>{downloadingPdf === report.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Download className="w-4 h-4 mr-1" />PDF</>}</Button>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2 mt-3">
+                                        <div className="p-2 bg-red-500/10 text-center"><p className="text-lg font-bold text-red-400">{report.summary?.critical || 0}</p><p className="text-xs">Critical</p></div>
+                                        <div className="p-2 bg-orange-500/10 text-center"><p className="text-lg font-bold text-orange-400">{report.summary?.high || 0}</p><p className="text-xs">High</p></div>
+                                        <div className="p-2 bg-yellow-500/10 text-center"><p className="text-lg font-bold text-yellow-400">{report.summary?.medium || 0}</p><p className="text-xs">Medium</p></div>
+                                        <div className="p-2 bg-green-500/10 text-center"><p className="text-lg font-bold text-green-400">{report.summary?.low || 0}</p><p className="text-xs">Low</p></div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )) : <p className="text-center text-muted-foreground py-8">No reports generated yet</p>}
+                    </div></CardContent>
+                </Card>
+            </div>
+        </div>
+    );
+}
+
+// Settings Page
+function SettingsPage() {
+    const [theme, setTheme] = useState('dark');
+    useEffect(() => { setTheme(localStorage.getItem('theme') || 'dark'); }, []);
+    const toggleTheme = () => { const newTheme = theme === 'dark' ? 'light' : 'dark'; setTheme(newTheme); localStorage.setItem('theme', newTheme); document.documentElement.classList.remove('light', 'dark'); document.documentElement.classList.add(newTheme); };
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="settings-page">
+            <Header title="Settings" subtitle="Configure your preferences" />
+            <div className="flex-1 p-6 overflow-auto">
+                <div className="max-w-2xl space-y-6">
+                    <Card className="border-border/40 bg-card/20"><CardHeader><CardTitle>Appearance</CardTitle></CardHeader><CardContent>
+                        <div className="flex items-center justify-between"><div className="flex items-center gap-3"><Palette className="w-5 h-5" /><div><p className="font-medium">Theme</p><p className="text-sm text-muted-foreground">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</p></div></div><Switch checked={theme === 'dark'} onCheckedChange={toggleTheme} data-testid="theme-switch" /></div>
+                    </CardContent></Card>
+                    <Card className="border-border/40 bg-card/20"><CardHeader><CardTitle>API Keys</CardTitle></CardHeader><CardContent><div className="flex items-center gap-3"><Key className="w-5 h-5 text-muted-foreground" /><div><p className="font-medium">Shodan API Key</p><p className="text-sm text-muted-foreground">Configured in backend</p></div></div></CardContent></Card>
+                </div>
+            </div>
         </div>
     );
 }
@@ -1946,13 +741,13 @@ function AppRoutes() {
     );
 }
 
-// App Component
+// Main App
 function App() {
     return (
         <BrowserRouter>
             <AuthProvider>
+                <Toaster position="top-right" richColors />
                 <AppRoutes />
-                <Toaster position="bottom-right" richColors />
             </AuthProvider>
         </BrowserRouter>
     );

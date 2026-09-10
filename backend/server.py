@@ -6,6 +6,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Set
@@ -493,6 +494,123 @@ async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_use
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Scan not found")
     return {"message": "Scan deleted"}
+
+# ==================== SCAN EXPORT ENDPOINTS ====================
+
+@api_router.get("/scans/{scan_id}/export")
+async def export_scan(scan_id: str, format: str = "json", current_user: dict = Depends(get_current_user)):
+    """Export scan results as JSON or CSV"""
+    scan = await db.scans.find_one(
+        {"id": scan_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    if format.lower() == "csv":
+        # Generate CSV export
+        import csv
+        output = io.StringIO()
+        
+        results = scan.get("results", {})
+        
+        # Write metadata
+        writer = csv.writer(output)
+        writer.writerow(["# PentestAI Scan Export"])
+        writer.writerow(["Scan ID", scan.get("id")])
+        writer.writerow(["Target", scan.get("target")])
+        writer.writerow(["Scan Type", scan.get("scan_type")])
+        writer.writerow(["Status", scan.get("status")])
+        writer.writerow(["Created", scan.get("created_at")])
+        writer.writerow([])
+        
+        # Write ports section
+        ports = results.get("ports", [])
+        if ports:
+            writer.writerow(["# Open Ports"])
+            writer.writerow(["Port", "Service", "State", "Version", "Source"])
+            for port in ports:
+                writer.writerow([
+                    port.get("port"),
+                    port.get("service"),
+                    port.get("state"),
+                    port.get("version", ""),
+                    port.get("source", "local")
+                ])
+            writer.writerow([])
+        
+        # Write DNS records
+        dns_records = results.get("dns_records", [])
+        if dns_records:
+            writer.writerow(["# DNS Records"])
+            writer.writerow(["Type", "Value"])
+            for record in dns_records:
+                writer.writerow([record.get("type"), record.get("value")])
+            writer.writerow([])
+        
+        # Write vulnerabilities section
+        vulns = results.get("vulnerabilities", [])
+        if vulns:
+            writer.writerow(["# Vulnerabilities"])
+            writer.writerow(["ID", "Severity", "CVSS", "Description", "Remediation", "Source"])
+            for vuln in vulns:
+                writer.writerow([
+                    vuln.get("id"),
+                    vuln.get("severity"),
+                    vuln.get("cvss", ""),
+                    vuln.get("description", "")[:200],
+                    vuln.get("remediation", ""),
+                    vuln.get("source", "local")
+                ])
+            writer.writerow([])
+        
+        # Write Shodan data if available
+        shodan = results.get("shodan")
+        if shodan and "error" not in shodan:
+            writer.writerow(["# Shodan Intelligence"])
+            writer.writerow(["Field", "Value"])
+            writer.writerow(["Organization", shodan.get("organization", "")])
+            writer.writerow(["ISP", shodan.get("isp", "")])
+            writer.writerow(["ASN", shodan.get("asn", "")])
+            writer.writerow(["Country", shodan.get("country", "")])
+            writer.writerow(["City", shodan.get("city", "")])
+            writer.writerow([])
+        
+        csv_content = output.getvalue()
+        return StreamingResponse(
+            io.BytesIO(csv_content.encode('utf-8')),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=scan_{scan_id[:8]}.csv"
+            }
+        )
+    
+    else:  # JSON format
+        # Return clean JSON export
+        export_data = {
+            "export_info": {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "platform": "PentestAI",
+                "version": "1.0"
+            },
+            "scan": {
+                "id": scan.get("id"),
+                "target": scan.get("target"),
+                "scan_type": scan.get("scan_type"),
+                "status": scan.get("status"),
+                "created_at": scan.get("created_at"),
+            },
+            "results": scan.get("results", {})
+        }
+        
+        json_content = json.dumps(export_data, indent=2)
+        return StreamingResponse(
+            io.BytesIO(json_content.encode('utf-8')),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=scan_{scan_id[:8]}.json"
+            }
+        )
 
 # ==================== DASHBOARD ENDPOINTS ====================
 
