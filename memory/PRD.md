@@ -16,11 +16,34 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - AI assistant powered by Claude Sonnet 4.5
 - Modular architecture for scan types
 
-## What's Been Implemented (v1.0 - Feb 2026)
+## What's Been Implemented
+
+### v1.0 - Initial MVP (Feb 2026)
+- JWT-based authentication system
+- Basic UI with dark theme
+- Mocked scan endpoints
+- AI chat with Claude Sonnet 4.5
+
+### v1.1 - Real Scanner Implementation (Sep 2026)
+- **REAL Network Scanner** replacing all mock data:
+  - Live DNS lookups using `dnspython` (A, AAAA, MX, NS, TXT, CNAME, SOA records)
+  - Real WHOIS queries using `python-whois` (registrar, dates, nameservers)
+  - Async port scanning using Python sockets (20 common ports)
+  - OS detection based on open port signatures
+  - Automatic vulnerability analysis based on exposed ports:
+    - CRITICAL: Exposed MongoDB, Redis
+    - HIGH: Exposed Telnet, RDP, MySQL
+    - MEDIUM: FTP, missing HTTPS, missing SPF
+- Removed ~70 lines of dead mock code
+- Added proper JWT_SECRET validation (fails fast if not set)
+- Added `mocked: true` flag to network scan results
 
 ### Backend (FastAPI + MongoDB)
 - ✅ User authentication (register, login, JWT tokens)
-- ✅ AI chat endpoint with Claude Sonnet 4.5
+- ✅ AI chat endpoint with Claude Sonnet 4.5 (Emergent LLM Key)
+- ✅ **Real** reconnaissance scanning (DNS, WHOIS, ports, vulns)
+- ✅ **Real** vulnerability assessment based on port scan
+- ✅ Network analysis (MOCKED - requires elevated privileges)
 - ✅ Scan management (create, list, get, delete)
 - ✅ Dashboard statistics
 - ✅ Report generation
@@ -29,7 +52,7 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 ### Frontend (React + Tailwind + ShadcnUI)
 - ✅ Login/Register pages
 - ✅ Dashboard with metrics and quick actions
-- ✅ Reconnaissance module with scan results
+- ✅ Reconnaissance module with **real** scan results (IP, DNS, WHOIS, ports, vulns)
 - ✅ Vulnerability assessment page
 - ✅ Network analysis page
 - ✅ AI Assistant chat interface
@@ -38,30 +61,30 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - ✅ Settings page (theme toggle)
 - ✅ Collapsible sidebar navigation
 
-### AI Integration
-- ✅ Claude Sonnet 4.5 via Emergent LLM key
-- ✅ System prompt configured for ethical pentesting
-- ✅ Session-based chat history
-- ✅ Terminal AI suggestions
+## Test Results (Sep 2026)
+- **Backend: 100%** - 19/19 pytest tests passed
+- **Frontend: 100%** - All Playwright E2E flows passed
+- Test suite at `/app/backend/tests/backend_test.py`
 
 ## Prioritized Backlog
 
 ### P0 (Critical - Next Sprint)
-- Real integration with Nmap/actual scanning tools
+- Shodan API integration (waiting for user API key)
 - Export reports to PDF format
 - MFA authentication
 
 ### P1 (High Priority)
-- Shodan API integration for broader reconnaissance
 - Real-time scan progress indicators
 - Collaborative team features
 - Scan scheduling/automation
+- Frontend code refactoring (split App.js into components)
 
 ### P2 (Medium Priority)
 - Custom vulnerability database
 - API key management for 3rd party services
 - Advanced reporting templates
 - Notification system (email alerts)
+- Dynamic dashboard stats (active_scans, vulnerability trends)
 
 ### P3 (Nice to Have)
 - Mobile app version
@@ -75,10 +98,19 @@ Frontend (React) -> Backend (FastAPI) -> MongoDB
                        |
                        v
             Claude Sonnet 4.5 (Emergent LLM Key)
+                       |
+                       v
+            Real Network Scanner (DNS, WHOIS, Ports)
 ```
 
-## Next Tasks
-1. Integrate real Nmap scanning capabilities
-2. Add PDF report export
-3. Implement MFA for enhanced security
-4. Connect Shodan API for extended recon
+## Key Files
+- `/app/backend/server.py` - API endpoints, auth, AI integration
+- `/app/backend/scanner.py` - Real network scanner module
+- `/app/frontend/src/App.js` - All React components
+- `/app/memory/test_credentials.md` - Test user credentials
+
+## Known Limitations
+1. Network analysis is simulated (requires root privileges for packet capture)
+2. Frontend in single App.js file (Babel plugin bug workaround)
+3. No pagination on list endpoints
+4. Scan runs synchronously (may timeout for large targets)

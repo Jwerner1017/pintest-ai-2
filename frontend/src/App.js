@@ -638,9 +638,28 @@ function ReconPage() {
                         <CardContent className="flex-1 overflow-auto">
                             {selectedScan?.results ? (
                                 <div className="space-y-6">
-                                    {selectedScan.results.ports && (
+                                    {/* Target Info */}
+                                    {(selectedScan.results.ip_address || selectedScan.results.os_detection) && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {selectedScan.results.ip_address && (
+                                                <div className="p-3 bg-background/50 border border-border/20">
+                                                    <p className="text-xs text-muted-foreground uppercase mb-1">IP Address</p>
+                                                    <p className="font-mono text-sm text-primary">{selectedScan.results.ip_address}</p>
+                                                </div>
+                                            )}
+                                            {selectedScan.results.os_detection && (
+                                                <div className="p-3 bg-background/50 border border-border/20">
+                                                    <p className="text-xs text-muted-foreground uppercase mb-1">OS Detection</p>
+                                                    <p className="text-sm">{selectedScan.results.os_detection}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Open Ports */}
+                                    {selectedScan.results.ports && selectedScan.results.ports.length > 0 && (
                                         <div>
-                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Server className="w-4 h-4 text-primary" />Open Ports</h3>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Server className="w-4 h-4 text-primary" />Open Ports ({selectedScan.results.ports.length})</h3>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                 {selectedScan.results.ports.map((port, i) => (
                                                     <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between">
@@ -651,20 +670,69 @@ function ReconPage() {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* DNS Records */}
+                                    {selectedScan.results.dns_records && selectedScan.results.dns_records.length > 0 && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400" />DNS Records ({selectedScan.results.dns_records.length})</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                {selectedScan.results.dns_records.map((record, i) => (
+                                                    <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between">
+                                                        <Badge variant="outline" className="mr-2">{record.type}</Badge>
+                                                        <span className="font-mono text-xs text-muted-foreground truncate flex-1">{record.value}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* WHOIS Info */}
+                                    {selectedScan.results.whois && selectedScan.results.whois.registrar && (
+                                        <div>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-purple-400" />WHOIS Information</h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <div className="p-3 bg-background/50 border border-border/20">
+                                                    <p className="text-xs text-muted-foreground mb-1">Registrar</p>
+                                                    <p className="text-sm truncate">{selectedScan.results.whois.registrar}</p>
+                                                </div>
+                                                <div className="p-3 bg-background/50 border border-border/20">
+                                                    <p className="text-xs text-muted-foreground mb-1">Created</p>
+                                                    <p className="text-sm">{selectedScan.results.whois.creation_date}</p>
+                                                </div>
+                                                <div className="p-3 bg-background/50 border border-border/20">
+                                                    <p className="text-xs text-muted-foreground mb-1">Expires</p>
+                                                    <p className="text-sm">{selectedScan.results.whois.expiration_date}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Vulnerabilities */}
                                     {selectedScan.results.vulnerabilities && selectedScan.results.vulnerabilities.length > 0 && (
                                         <div>
-                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" />Vulnerabilities</h3>
+                                            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" />Vulnerabilities ({selectedScan.results.vulnerabilities.length})</h3>
                                             <div className="space-y-2">
                                                 {selectedScan.results.vulnerabilities.map((vuln, i) => (
                                                     <div key={i} className="p-3 bg-background/50 border border-border/20">
                                                         <div className="flex items-center justify-between mb-2">
                                                             <span className="font-mono text-sm text-primary">{vuln.id}</span>
-                                                            <Badge className={`bg-${vuln.severity === 'critical' ? 'red' : vuln.severity === 'high' ? 'orange' : 'yellow'}-500/20 text-${vuln.severity === 'critical' ? 'red' : vuln.severity === 'high' ? 'orange' : 'yellow'}-400`}>{vuln.severity?.toUpperCase()}</Badge>
+                                                            <Badge className={vuln.severity === 'critical' ? 'bg-red-500/20 text-red-400' : vuln.severity === 'high' ? 'bg-orange-500/20 text-orange-400' : vuln.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-green-500/20 text-green-400'}>{vuln.severity?.toUpperCase()}</Badge>
                                                         </div>
                                                         <p className="text-sm text-muted-foreground">{vuln.description}</p>
+                                                        {vuln.remediation && <p className="text-xs text-green-400 mt-2">Fix: {vuln.remediation}</p>}
                                                     </div>
                                                 ))}
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* No results message */}
+                                    {(!selectedScan.results.ports || selectedScan.results.ports.length === 0) && 
+                                     (!selectedScan.results.vulnerabilities || selectedScan.results.vulnerabilities.length === 0) && (
+                                        <div className="text-center py-8 text-muted-foreground">
+                                            <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+                                            <p>No open ports or vulnerabilities detected</p>
+                                            <p className="text-sm">Target appears secure or ports are filtered</p>
                                         </div>
                                     )}
                                 </div>

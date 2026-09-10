@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from scanner import perform_recon_scan, generate_vuln_scan_results, generate_network_scan_results, is_valid_target
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -23,7 +24,10 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'pentestai-secret-key-change-in-production')
+jwt_secret = os.environ.get('JWT_SECRET')
+if not jwt_secret:
+    raise RuntimeError("JWT_SECRET environment variable is required")
+JWT_SECRET = jwt_secret
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
@@ -256,8 +260,25 @@ async def get_chat_history(session_id: Optional[str] = None, current_user: dict 
 async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_current_user)):
     scan_id = str(uuid.uuid4())
     
-    # Simulate scan results based on type
-    mock_results = generate_mock_scan_results(scan_data.scan_type, scan_data.target)
+    # Validate target
+    if not is_valid_target(scan_data.target):
+        raise HTTPException(status_code=400, detail="Invalid target format. Use domain name or IP address.")
+    
+    # Perform real scan based on type
+    try:
+        if scan_data.scan_type == "recon":
+            scan_results = await perform_recon_scan(scan_data.target)
+        elif scan_data.scan_type == "vuln":
+            # First do a quick port scan, then vulnerability analysis
+            recon_results = await perform_recon_scan(scan_data.target)
+            scan_results = generate_vuln_scan_results(scan_data.target, recon_results.get("ports", []))
+        elif scan_data.scan_type == "network":
+            scan_results = generate_network_scan_results(scan_data.target)
+        else:
+            scan_results = {"target": scan_data.target, "message": "Unknown scan type"}
+    except Exception as e:
+        logger.error(f"Scan failed for {scan_data.target}: {e}")
+        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
     
     scan_doc = {
         "id": scan_id,
@@ -266,7 +287,7 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
         "target": scan_data.target,
         "options": scan_data.options,
         "status": "completed",
-        "results": mock_results,
+        "results": scan_results,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -287,7 +308,7 @@ async def create_scan(scan_data: ScanCreate, current_user: dict = Depends(get_cu
         target=scan_data.target,
         status="completed",
         created_at=scan_doc["created_at"],
-        results=mock_results
+        results=scan_results
     )
 
 @api_router.get("/scans", response_model=List[ScanResponse])
@@ -400,81 +421,8 @@ async def generate_report(scan_ids: List[str], current_user: dict = Depends(get_
     }
     
     await db.reports.insert_one(report)
+    report.pop("_id", None)
     return report
-
-# ==================== HELPER FUNCTIONS ====================
-
-def generate_mock_scan_results(scan_type: str, target: str):
-    """Generate realistic mock scan results for demonstration"""
-    
-    if scan_type == "recon":
-        return {
-            "target": target,
-            "scan_type": "reconnaissance",
-            "ports": [
-                {"port": 22, "service": "ssh", "state": "open", "version": "OpenSSH 8.9"},
-                {"port": 80, "service": "http", "state": "open", "version": "nginx 1.24.0"},
-                {"port": 443, "service": "https", "state": "open", "version": "nginx 1.24.0"},
-                {"port": 3306, "service": "mysql", "state": "filtered", "version": "unknown"},
-            ],
-            "os_detection": "Linux 5.x",
-            "hostnames": [target],
-            "whois": {
-                "registrar": "Example Registrar",
-                "creation_date": "2020-01-15",
-                "expiration_date": "2025-01-15"
-            },
-            "dns_records": [
-                {"type": "A", "value": "192.168.1.100"},
-                {"type": "MX", "value": "mail." + target},
-                {"type": "NS", "value": "ns1." + target}
-            ],
-            "vulnerabilities": [
-                {"id": "CVE-2024-1234", "severity": "high", "description": "SSH authentication bypass vulnerability", "cvss": 8.1},
-                {"id": "CVE-2024-5678", "severity": "medium", "description": "HTTP server information disclosure", "cvss": 5.3},
-            ]
-        }
-    
-    elif scan_type == "vuln":
-        return {
-            "target": target,
-            "scan_type": "vulnerability",
-            "vulnerabilities": [
-                {"id": "CVE-2024-1234", "severity": "critical", "description": "Remote code execution in web framework", "cvss": 9.8, "remediation": "Update to latest version"},
-                {"id": "CVE-2024-2345", "severity": "high", "description": "SQL injection in login form", "cvss": 8.6, "remediation": "Use parameterized queries"},
-                {"id": "CVE-2024-3456", "severity": "high", "description": "Cross-site scripting (XSS) vulnerability", "cvss": 7.5, "remediation": "Implement input sanitization"},
-                {"id": "CVE-2024-4567", "severity": "medium", "description": "Missing security headers", "cvss": 5.0, "remediation": "Add Content-Security-Policy header"},
-                {"id": "CVE-2024-5678", "severity": "low", "description": "Server version disclosure", "cvss": 3.1, "remediation": "Hide server version in responses"},
-            ],
-            "risk_score": 7.8,
-            "compliance": {
-                "pci_dss": "Non-compliant",
-                "owasp_top10": ["A03:2021 - Injection", "A07:2021 - XSS"]
-            }
-        }
-    
-    elif scan_type == "network":
-        return {
-            "target": target,
-            "scan_type": "network_analysis",
-            "traffic_summary": {
-                "total_packets": 15420,
-                "protocols": {"TCP": 12500, "UDP": 2500, "ICMP": 420},
-                "top_talkers": [
-                    {"ip": "192.168.1.100", "packets": 5000, "bytes": 2500000},
-                    {"ip": "192.168.1.101", "packets": 3500, "bytes": 1750000},
-                ]
-            },
-            "anomalies": [
-                {"type": "Port Scan Detected", "severity": "high", "source": "10.0.0.50", "timestamp": datetime.now(timezone.utc).isoformat()},
-                {"type": "Unusual DNS Query", "severity": "medium", "query": "suspicious.domain.com", "timestamp": datetime.now(timezone.utc).isoformat()},
-            ],
-            "vulnerabilities": [
-                {"id": "NET-001", "severity": "medium", "description": "Unencrypted traffic detected", "cvss": 5.5},
-            ]
-        }
-    
-    return {"message": "Scan completed", "target": target}
 
 # ==================== ROOT ENDPOINT ====================
 
