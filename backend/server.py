@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -12,6 +12,9 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
+import ipaddress
+import httpx
+import asyncio
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from scanner import perform_recon_scan, generate_vuln_scan_results, generate_network_scan_results, is_valid_target
 
@@ -98,6 +101,46 @@ class DashboardStats(BaseModel):
     vulnerabilities_found: int
     critical_alerts: int
     recent_activity: List[dict]
+
+# Bulk Scan Models
+class BulkScanCreate(BaseModel):
+    scan_type: str = "recon"
+    targets: List[str] = []  # List of IPs/domains
+    cidr: Optional[str] = None  # CIDR notation like 192.168.1.0/24
+    options: Optional[dict] = {}
+
+class BulkScanResponse(BaseModel):
+    id: str
+    scan_type: str
+    total_targets: int
+    completed: int
+    failed: int
+    status: str
+    created_at: str
+    results: Optional[List[dict]] = None
+
+# Scheduled Scan Models
+class ScheduledScanCreate(BaseModel):
+    name: str
+    scan_type: str = "recon"
+    targets: List[str]
+    schedule_type: str  # daily, weekly, monthly
+    schedule_time: str  # HH:MM format
+    schedule_day: Optional[int] = None  # Day of week (0-6) or day of month (1-31)
+    enabled: bool = True
+
+class ScheduledScanResponse(BaseModel):
+    id: str
+    name: str
+    scan_type: str
+    targets: List[str]
+    schedule_type: str
+    schedule_time: str
+    schedule_day: Optional[int]
+    enabled: bool
+    last_run: Optional[str]
+    next_run: Optional[str]
+    created_at: str
 
 # ==================== AUTH HELPERS ====================
 
@@ -423,6 +466,544 @@ async def generate_report(scan_ids: List[str], current_user: dict = Depends(get_
     await db.reports.insert_one(report)
     report.pop("_id", None)
     return report
+
+# ==================== CVE DETAILS ENDPOINT ====================
+
+@api_router.get("/cve/{cve_id}")
+async def get_cve_details(cve_id: str, current_user: dict = Depends(get_current_user)):
+    """Fetch CVE details from NVD (National Vulnerability Database)"""
+    # Validate CVE format
+    if not cve_id.upper().startswith("CVE-"):
+        raise HTTPException(status_code=400, detail="Invalid CVE format. Expected CVE-YYYY-NNNNN")
+    
+    cve_id = cve_id.upper()
+    
+    # Check cache first
+    cached = await db.cve_cache.find_one({"cve_id": cve_id}, {"_id": 0})
+    if cached:
+        # Return cached if less than 24 hours old
+        cached_time = datetime.fromisoformat(cached.get("cached_at", "2000-01-01"))
+        if datetime.now(timezone.utc) - cached_time < timedelta(hours=24):
+            return cached["data"]
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # NVD API 2.0
+            response = await client.get(
+                f"https://services.nvd.nist.gov/rest/json/cves/2.0",
+                params={"cveId": cve_id}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch CVE data from NVD")
+            
+            data = response.json()
+            vulnerabilities = data.get("vulnerabilities", [])
+            
+            if not vulnerabilities:
+                raise HTTPException(status_code=404, detail=f"CVE {cve_id} not found")
+            
+            cve_data = vulnerabilities[0].get("cve", {})
+            
+            # Extract relevant information
+            descriptions = cve_data.get("descriptions", [])
+            description = next((d["value"] for d in descriptions if d.get("lang") == "en"), "No description available")
+            
+            # Get CVSS scores
+            metrics = cve_data.get("metrics", {})
+            cvss_v3 = None
+            cvss_v2 = None
+            
+            if "cvssMetricV31" in metrics:
+                cvss_data = metrics["cvssMetricV31"][0]["cvssData"]
+                cvss_v3 = {
+                    "version": "3.1",
+                    "score": cvss_data.get("baseScore"),
+                    "severity": cvss_data.get("baseSeverity"),
+                    "vector": cvss_data.get("vectorString"),
+                    "attack_vector": cvss_data.get("attackVector"),
+                    "attack_complexity": cvss_data.get("attackComplexity"),
+                    "privileges_required": cvss_data.get("privilegesRequired"),
+                    "user_interaction": cvss_data.get("userInteraction"),
+                    "scope": cvss_data.get("scope"),
+                    "confidentiality_impact": cvss_data.get("confidentialityImpact"),
+                    "integrity_impact": cvss_data.get("integrityImpact"),
+                    "availability_impact": cvss_data.get("availabilityImpact")
+                }
+            elif "cvssMetricV30" in metrics:
+                cvss_data = metrics["cvssMetricV30"][0]["cvssData"]
+                cvss_v3 = {
+                    "version": "3.0",
+                    "score": cvss_data.get("baseScore"),
+                    "severity": cvss_data.get("baseSeverity"),
+                    "vector": cvss_data.get("vectorString")
+                }
+            
+            if "cvssMetricV2" in metrics:
+                cvss_data = metrics["cvssMetricV2"][0]["cvssData"]
+                cvss_v2 = {
+                    "version": "2.0",
+                    "score": cvss_data.get("baseScore"),
+                    "vector": cvss_data.get("vectorString")
+                }
+            
+            # Get references
+            references = [
+                {"url": ref.get("url"), "source": ref.get("source"), "tags": ref.get("tags", [])}
+                for ref in cve_data.get("references", [])[:10]
+            ]
+            
+            # Get affected configurations/products
+            configurations = cve_data.get("configurations", [])
+            affected_products = []
+            for config in configurations:
+                for node in config.get("nodes", []):
+                    for match in node.get("cpeMatch", []):
+                        if match.get("vulnerable"):
+                            cpe = match.get("criteria", "")
+                            # Parse CPE string to get product info
+                            parts = cpe.split(":")
+                            if len(parts) >= 5:
+                                affected_products.append({
+                                    "vendor": parts[3] if len(parts) > 3 else "unknown",
+                                    "product": parts[4] if len(parts) > 4 else "unknown",
+                                    "version_start": match.get("versionStartIncluding"),
+                                    "version_end": match.get("versionEndExcluding") or match.get("versionEndIncluding")
+                                })
+            
+            # Get weakness (CWE)
+            weaknesses = cve_data.get("weaknesses", [])
+            cwe_ids = []
+            for weakness in weaknesses:
+                for desc in weakness.get("description", []):
+                    if desc.get("lang") == "en":
+                        cwe_ids.append(desc.get("value"))
+            
+            # Helper function to derive severity from CVSS v2 score
+            def get_severity_from_v2_score(score):
+                if score is None:
+                    return "UNKNOWN"
+                if score >= 9.0:
+                    return "CRITICAL"
+                elif score >= 7.0:
+                    return "HIGH"
+                elif score >= 4.0:
+                    return "MEDIUM"
+                else:
+                    return "LOW"
+            
+            # Determine severity - prefer v3, fall back to v2-derived
+            if cvss_v3:
+                severity = cvss_v3["severity"]
+            elif cvss_v2:
+                severity = get_severity_from_v2_score(cvss_v2["score"])
+            else:
+                severity = "UNKNOWN"
+            
+            result = {
+                "cve_id": cve_id,
+                "description": description,
+                "published": cve_data.get("published"),
+                "last_modified": cve_data.get("lastModified"),
+                "cvss_v3": cvss_v3,
+                "cvss_v2": cvss_v2,
+                "severity": severity,
+                "score": cvss_v3["score"] if cvss_v3 else (cvss_v2["score"] if cvss_v2 else None),
+                "weaknesses": cwe_ids,
+                "affected_products": affected_products[:20],
+                "references": references,
+                "source": "NVD"
+            }
+            
+            # Cache the result
+            await db.cve_cache.update_one(
+                {"cve_id": cve_id},
+                {"$set": {"cve_id": cve_id, "data": result, "cached_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True
+            )
+            
+            return result
+            
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions (404, 400, etc.) without modification
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="NVD API timeout")
+    except Exception as e:
+        logger.error(f"CVE lookup error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch CVE details: {str(e)}")
+
+# ==================== BULK SCAN ENDPOINTS ====================
+
+def parse_cidr(cidr: str) -> List[str]:
+    """Parse CIDR notation and return list of IPs (limited to 256 for safety)"""
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+        # Limit to /24 or smaller for safety
+        if network.num_addresses > 256:
+            raise ValueError("CIDR range too large. Maximum /24 (256 hosts) allowed")
+        return [str(ip) for ip in network.hosts()][:256]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid CIDR: {str(e)}")
+
+async def run_bulk_scan_job(bulk_scan_id: str, user_id: str, targets: List[str], scan_type: str):
+    """Background task to run bulk scans"""
+    results = []
+    completed = 0
+    failed = 0
+    
+    for target in targets:
+        try:
+            # Update progress
+            await db.bulk_scans.update_one(
+                {"id": bulk_scan_id},
+                {"$set": {"completed": completed, "status": "running"}}
+            )
+            
+            # Perform scan based on type
+            if scan_type == "recon":
+                scan_result = await perform_recon_scan(target)
+            elif scan_type == "vuln":
+                recon_result = await perform_recon_scan(target)
+                scan_result = generate_vuln_scan_results(target, recon_result.get("ports", []))
+            else:
+                scan_result = {"target": target, "error": "Unknown scan type"}
+            
+            # Store individual scan result
+            scan_id = str(uuid.uuid4())
+            scan_doc = {
+                "id": scan_id,
+                "user_id": user_id,
+                "bulk_scan_id": bulk_scan_id,
+                "scan_type": scan_type,
+                "target": target,
+                "status": "completed" if "error" not in scan_result else "failed",
+                "results": scan_result,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.scans.insert_one(scan_doc)
+            
+            results.append({
+                "target": target,
+                "scan_id": scan_id,
+                "status": "completed" if "error" not in scan_result else "failed",
+                "vulnerabilities_count": len(scan_result.get("vulnerabilities", []))
+            })
+            completed += 1
+            
+            # Small delay to avoid overwhelming targets
+            await asyncio.sleep(0.5)
+            
+        except Exception as e:
+            logger.error(f"Bulk scan error for {target}: {e}")
+            results.append({"target": target, "status": "failed", "error": str(e)})
+            failed += 1
+    
+    # Update final status
+    await db.bulk_scans.update_one(
+        {"id": bulk_scan_id},
+        {
+            "$set": {
+                "status": "completed",
+                "completed": completed,
+                "failed": failed,
+                "results": results,
+                "completed_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    
+    # Log activity
+    await db.activity_log.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": user_id,
+        "action": f"Completed bulk {scan_type} scan",
+        "target": f"{completed} targets scanned",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+@api_router.post("/bulk-scans", response_model=BulkScanResponse)
+async def create_bulk_scan(
+    scan_data: BulkScanCreate, 
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a bulk scan for multiple targets"""
+    targets = list(scan_data.targets)
+    
+    # Parse CIDR if provided
+    if scan_data.cidr:
+        cidr_targets = parse_cidr(scan_data.cidr)
+        targets.extend(cidr_targets)
+    
+    if not targets:
+        raise HTTPException(status_code=400, detail="No valid targets provided")
+    
+    # Validate all targets
+    invalid_targets = [t for t in targets if not is_valid_target(t)]
+    if invalid_targets:
+        raise HTTPException(status_code=400, detail=f"Invalid targets: {', '.join(invalid_targets[:5])}")
+    
+    # Limit total targets
+    if len(targets) > 256:
+        raise HTTPException(status_code=400, detail="Maximum 256 targets allowed per bulk scan")
+    
+    # Remove duplicates
+    targets = list(set(targets))
+    
+    bulk_scan_id = str(uuid.uuid4())
+    bulk_scan_doc = {
+        "id": bulk_scan_id,
+        "user_id": current_user["id"],
+        "scan_type": scan_data.scan_type,
+        "targets": targets,
+        "total_targets": len(targets),
+        "completed": 0,
+        "failed": 0,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.bulk_scans.insert_one(bulk_scan_doc)
+    
+    # Start background task
+    background_tasks.add_task(
+        run_bulk_scan_job, 
+        bulk_scan_id, 
+        current_user["id"], 
+        targets, 
+        scan_data.scan_type
+    )
+    
+    return BulkScanResponse(
+        id=bulk_scan_id,
+        scan_type=scan_data.scan_type,
+        total_targets=len(targets),
+        completed=0,
+        failed=0,
+        status="pending",
+        created_at=bulk_scan_doc["created_at"]
+    )
+
+@api_router.get("/bulk-scans")
+async def list_bulk_scans(current_user: dict = Depends(get_current_user)):
+    """List all bulk scans for the current user"""
+    scans = await db.bulk_scans.find(
+        {"user_id": current_user["id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {"bulk_scans": scans}
+
+@api_router.get("/bulk-scans/{bulk_scan_id}")
+async def get_bulk_scan(bulk_scan_id: str, current_user: dict = Depends(get_current_user)):
+    """Get details of a specific bulk scan"""
+    scan = await db.bulk_scans.find_one(
+        {"id": bulk_scan_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    if not scan:
+        raise HTTPException(status_code=404, detail="Bulk scan not found")
+    return scan
+
+# ==================== SCHEDULED SCAN ENDPOINTS ====================
+
+def calculate_next_run(schedule_type: str, schedule_time: str, schedule_day: Optional[int] = None) -> str:
+    """Calculate the next run time based on schedule configuration"""
+    now = datetime.now(timezone.utc)
+    hour, minute = map(int, schedule_time.split(":"))
+    
+    if schedule_type == "daily":
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+    
+    elif schedule_type == "weekly":
+        day_of_week = schedule_day or 0  # Monday by default
+        days_ahead = day_of_week - now.weekday()
+        if days_ahead < 0 or (days_ahead == 0 and now.hour >= hour):
+            days_ahead += 7
+        next_run = now + timedelta(days=days_ahead)
+        next_run = next_run.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    
+    elif schedule_type == "monthly":
+        day_of_month = schedule_day or 1
+        next_run = now.replace(day=min(day_of_month, 28), hour=hour, minute=minute, second=0, microsecond=0)
+        if next_run <= now:
+            # Move to next month
+            if now.month == 12:
+                next_run = next_run.replace(year=now.year + 1, month=1)
+            else:
+                next_run = next_run.replace(month=now.month + 1)
+    
+    else:
+        next_run = now + timedelta(days=1)
+    
+    return next_run.isoformat()
+
+@api_router.post("/scheduled-scans", response_model=ScheduledScanResponse)
+async def create_scheduled_scan(
+    scan_data: ScheduledScanCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new scheduled scan"""
+    # Validate schedule_time format
+    try:
+        hour, minute = map(int, scan_data.schedule_time.split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError()
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid schedule_time format. Use HH:MM")
+    
+    # Validate schedule_type
+    if scan_data.schedule_type not in ["daily", "weekly", "monthly"]:
+        raise HTTPException(status_code=400, detail="schedule_type must be daily, weekly, or monthly")
+    
+    # Validate targets
+    if not scan_data.targets:
+        raise HTTPException(status_code=400, detail="At least one target required")
+    
+    invalid_targets = [t for t in scan_data.targets if not is_valid_target(t)]
+    if invalid_targets:
+        raise HTTPException(status_code=400, detail=f"Invalid targets: {', '.join(invalid_targets)}")
+    
+    schedule_id = str(uuid.uuid4())
+    next_run = calculate_next_run(scan_data.schedule_type, scan_data.schedule_time, scan_data.schedule_day)
+    
+    schedule_doc = {
+        "id": schedule_id,
+        "user_id": current_user["id"],
+        "name": scan_data.name,
+        "scan_type": scan_data.scan_type,
+        "targets": scan_data.targets,
+        "schedule_type": scan_data.schedule_type,
+        "schedule_time": scan_data.schedule_time,
+        "schedule_day": scan_data.schedule_day,
+        "enabled": scan_data.enabled,
+        "last_run": None,
+        "next_run": next_run,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.scheduled_scans.insert_one(schedule_doc)
+    
+    return ScheduledScanResponse(**{k: v for k, v in schedule_doc.items() if k != "_id"})
+
+@api_router.get("/scheduled-scans")
+async def list_scheduled_scans(current_user: dict = Depends(get_current_user)):
+    """List all scheduled scans for the current user"""
+    schedules = await db.scheduled_scans.find(
+        {"user_id": current_user["id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {"scheduled_scans": schedules}
+
+@api_router.get("/scheduled-scans/{schedule_id}")
+async def get_scheduled_scan(schedule_id: str, current_user: dict = Depends(get_current_user)):
+    """Get a specific scheduled scan"""
+    schedule = await db.scheduled_scans.find_one(
+        {"id": schedule_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Scheduled scan not found")
+    return schedule
+
+@api_router.patch("/scheduled-scans/{schedule_id}")
+async def update_scheduled_scan(
+    schedule_id: str,
+    enabled: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Toggle a scheduled scan on/off"""
+    schedule = await db.scheduled_scans.find_one(
+        {"id": schedule_id, "user_id": current_user["id"]}
+    )
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Scheduled scan not found")
+    
+    update_data = {}
+    if enabled is not None:
+        update_data["enabled"] = enabled
+        if enabled:
+            # Recalculate next run
+            update_data["next_run"] = calculate_next_run(
+                schedule["schedule_type"],
+                schedule["schedule_time"],
+                schedule.get("schedule_day")
+            )
+    
+    if update_data:
+        await db.scheduled_scans.update_one(
+            {"id": schedule_id},
+            {"$set": update_data}
+        )
+    
+    updated = await db.scheduled_scans.find_one({"id": schedule_id}, {"_id": 0})
+    return updated
+
+@api_router.delete("/scheduled-scans/{schedule_id}")
+async def delete_scheduled_scan(schedule_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a scheduled scan"""
+    result = await db.scheduled_scans.delete_one(
+        {"id": schedule_id, "user_id": current_user["id"]}
+    )
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Scheduled scan not found")
+    return {"message": "Scheduled scan deleted"}
+
+@api_router.post("/scheduled-scans/{schedule_id}/run")
+async def run_scheduled_scan_now(
+    schedule_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually trigger a scheduled scan to run now"""
+    schedule = await db.scheduled_scans.find_one(
+        {"id": schedule_id, "user_id": current_user["id"]}
+    )
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Scheduled scan not found")
+    
+    # Create a bulk scan from the scheduled scan
+    bulk_scan_id = str(uuid.uuid4())
+    bulk_scan_doc = {
+        "id": bulk_scan_id,
+        "user_id": current_user["id"],
+        "scheduled_scan_id": schedule_id,
+        "scan_type": schedule["scan_type"],
+        "targets": schedule["targets"],
+        "total_targets": len(schedule["targets"]),
+        "completed": 0,
+        "failed": 0,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.bulk_scans.insert_one(bulk_scan_doc)
+    
+    # Update last_run and next_run
+    next_run = calculate_next_run(
+        schedule["schedule_type"],
+        schedule["schedule_time"],
+        schedule.get("schedule_day")
+    )
+    await db.scheduled_scans.update_one(
+        {"id": schedule_id},
+        {"$set": {
+            "last_run": datetime.now(timezone.utc).isoformat(),
+            "next_run": next_run
+        }}
+    )
+    
+    # Start background task
+    background_tasks.add_task(
+        run_bulk_scan_job,
+        bulk_scan_id,
+        current_user["id"],
+        schedule["targets"],
+        schedule["scan_type"]
+    )
+    
+    return {"message": "Scheduled scan started", "bulk_scan_id": bulk_scan_id}
 
 # ==================== ROOT ENDPOINT ====================
 

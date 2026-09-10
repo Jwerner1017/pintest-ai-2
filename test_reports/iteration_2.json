@@ -1,0 +1,45 @@
+{
+  "summary": "Comprehensive testing of 3 new features (Bulk Scans, Scheduled Scans, CVE Details). Backend: 20/21 pytest tests passed. Frontend: all UI flows work end-to-end via Playwright. Bulk scans (targets list + CIDR expansion) run and complete via background job. Scheduled scans support daily/weekly/monthly, toggle on/off, manual run trigger, and delete. CVE modal opens from Recon scan results, fetches from NVD, displays description/CVSS/affected products/CWE/references, and cache works (2nd open ~0.5s vs 1.8s first).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/cve/{cve_id}", "issue": "When NVD returns no results for an unknown CVE (e.g., CVE-1999-99999), the endpoint returns 500 instead of 404. Root cause: the inner `raise HTTPException(404, ...)` is caught by the outer `except Exception` and re-raised as 500. Fix: catch HTTPException separately and re-raise, or move NVD call outside the broad except."},
+      {"endpoint": "GET /api/cve/{cve_id}", "issue": "When only CVSS v2 metrics are present (no v3), the top-level `severity` field is set to 'UNKNOWN' even though a numeric `score` is available (e.g., CVE-2014-0117 -> UNKNOWN, 4.3). Consider deriving severity from CVSS v2 score when v3 missing."},
+      {"endpoint": "PATCH /api/scheduled-scans/{id}", "issue": "`enabled` is a query parameter, not JSON body. Works because the frontend sends `?enabled=` in the URL, but this is unusual for a PATCH and hurts API ergonomics/docs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "CVE modal", "issues": ["Severity badge shows 'UNKNOWN' for CVEs that only have CVSS v2 (no v3), which is confusing when a score is displayed right next to it. Derive severity from CVSS v2 base score when v3 is unavailable."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/new_features.xml"
+  ],
+  "action_items": [
+    "Fix CVE lookup 500 vs 404: in get_cve_details, catch and re-raise HTTPException before the generic `except Exception` so 404/400/etc pass through.",
+    "Derive `severity` from CVSS v2 score when only v2 is available (e.g., 0-3.9 LOW, 4-6.9 MEDIUM, 7-8.9 HIGH, 9-10 CRITICAL) so the modal doesn't display 'UNKNOWN' alongside a valid score.",
+    "Consider moving PATCH /api/scheduled-scans/{id} `enabled` from query param to JSON body for API cleanliness (would also require a frontend update)."
+  ],
+  "critical_code_review_comments": [
+    "server.py get_cve_details: overly broad `except Exception` swallows HTTPExceptions (404/400) and converts them to 500 - a common FastAPI antipattern.",
+    "Scheduled scans have no actual scheduler/cron running in the backend; `next_run` is computed but nothing ever executes automatically. Only the manual /run trigger works. The PRD promises automatic recurring scans; without a background scheduler (e.g., APScheduler) or cron, daily/weekly/monthly scans will never fire on their own.",
+    "run_bulk_scan_job runs scans sequentially with 0.5s sleep - for 256 hosts this is very slow. Consider bounded concurrency (asyncio.gather with semaphore).",
+    "parse_cidr's `network.hosts()` skips network/broadcast addresses - correct, but for /31 and /32 documentation should note this since `total_targets` may differ from CIDR arithmetic.",
+    "App.js has grown to 1824 lines - continued growth; splitting into per-page files is overdue.",
+    "CVE modal: fetchCveDetails likely has no loading/error UI states shown to the user (only success). If NVD is rate-limited or slow, user gets no feedback."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (new)"
+  ],
+  "success_rate": {"backend": "95% (20/21)", "frontend": "100%"},
+  "test_credentials": "tester@example.com / test123456",
+  "seed_data_creation": "Test bulk scans, scheduled scans (TEST_daily_scan/weekly/monthly), and CVE cache entries created; scheduled scans cleaned up in test teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New test file at /app/backend/tests/test_new_features.py runs against the live preview URL. All 3 features (bulk scan with CIDR /30 up to /24 max, scheduled scans daily/weekly/monthly with query-param toggle, CVE lookup with 24h Mongo cache) are backend-verified. Frontend Playwright verified full flows. Known backend edge case: CVE lookup returns 500 instead of 404 for unknown CVEs due to broad exception handler. Note: automatic scheduled execution is NOT implemented server-side - only the manual /run endpoint triggers scans.",
+  "rca of the issue": "CVE 404->500: in get_cve_details(), the `raise HTTPException(404, 'CVE not found')` inside the try block is caught by the outer `except Exception as e: raise HTTPException(500, ...)`. Reproduction: GET /api/cve/CVE-1999-99999 -> 500. Mitigation: add `except HTTPException: raise` before the generic Exception handler, or restructure so NVD parsing is outside the broad except."
+}

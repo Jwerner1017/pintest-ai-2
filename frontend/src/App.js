@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
@@ -13,13 +13,15 @@ import { Separator } from './components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Progress } from './components/ui/progress';
 import { Checkbox } from './components/ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './components/ui/dialog';
+import { Textarea } from './components/ui/textarea';
 import { 
     Shield, LayoutDashboard, Search, Bug, Network, MessageSquare, 
     FileText, Settings, Terminal, LogOut, ChevronLeft, ChevronRight,
     Sun, Moon, Bell, AlertCircle, AlertTriangle, Target, Activity, ArrowUpRight, Clock,
     Send, Bot, User, Loader2, Sparkles, Copy, Check, Globe, Server, Wifi,
     Play, FileWarning, CheckCircle, XCircle, Download, Calendar, Lightbulb, X,
-    Palette, Key
+    Palette, Key, Layers, Timer, ExternalLink, Info, Trash2, RefreshCw, Plus
 } from 'lucide-react';
 import './App.css';
 
@@ -95,6 +97,8 @@ function useAuth() {
 const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/recon', label: 'Reconnaissance', icon: Search },
+    { path: '/bulk-scan', label: 'Bulk Scan', icon: Layers },
+    { path: '/scheduled', label: 'Scheduled Scans', icon: Timer },
     { path: '/vulnerabilities', label: 'Vulnerabilities', icon: Bug },
     { path: '/network', label: 'Network', icon: Network },
     { path: '/assistant', label: 'AI Assistant', icon: MessageSquare },
@@ -573,6 +577,10 @@ function ReconPage() {
     const [loading, setLoading] = useState(false);
     const [scans, setScans] = useState([]);
     const [selectedScan, setSelectedScan] = useState(null);
+    const [cveModalOpen, setCveModalOpen] = useState(false);
+    const [selectedCve, setSelectedCve] = useState(null);
+    const [cveLoading, setCveLoading] = useState(false);
+    const [cveData, setCveData] = useState(null);
 
     useEffect(() => { fetchScans(); }, []);
 
@@ -594,6 +602,23 @@ function ReconPage() {
             setTarget('');
         } catch (error) { toast.error('Scan failed'); } 
         finally { setLoading(false); }
+    };
+
+    const fetchCveDetails = async (cveId) => {
+        if (!cveId.startsWith('CVE-')) return;
+        setSelectedCve(cveId);
+        setCveModalOpen(true);
+        setCveLoading(true);
+        setCveData(null);
+        try {
+            const response = await axios.get(`${API_URL}/api/cve/${cveId}`);
+            setCveData(response.data);
+        } catch (error) {
+            toast.error('Failed to fetch CVE details');
+            setCveData({ error: error.response?.data?.detail || 'Failed to fetch CVE details' });
+        } finally {
+            setCveLoading(false);
+        }
     };
 
     return (
@@ -774,10 +799,21 @@ function ReconPage() {
                                             <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-yellow-500" />Vulnerabilities ({selectedScan.results.vulnerabilities.length})</h3>
                                             <div className="space-y-2">
                                                 {selectedScan.results.vulnerabilities.map((vuln, i) => (
-                                                    <div key={i} className="p-3 bg-background/50 border border-border/20">
+                                                    <div key={i} className="p-3 bg-background/50 border border-border/20 hover:bg-background/70 transition-colors">
                                                         <div className="flex items-center justify-between mb-2">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="font-mono text-sm text-primary">{vuln.id}</span>
+                                                                {vuln.id.startsWith('CVE-') ? (
+                                                                    <button 
+                                                                        onClick={() => fetchCveDetails(vuln.id)}
+                                                                        className="font-mono text-sm text-primary hover:underline flex items-center gap-1"
+                                                                        data-testid={`cve-link-${vuln.id}`}
+                                                                    >
+                                                                        {vuln.id}
+                                                                        <Info className="w-3 h-3" />
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="font-mono text-sm text-primary">{vuln.id}</span>
+                                                                )}
                                                                 {vuln.source === 'shodan' && <Badge variant="outline" className="text-xs border-cyan-500/30 text-cyan-400">Shodan</Badge>}
                                                             </div>
                                                             <div className="flex items-center gap-2">
@@ -808,6 +844,121 @@ function ReconPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* CVE Details Modal */}
+            <Dialog open={cveModalOpen} onOpenChange={setCveModalOpen}>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Bug className="w-5 h-5 text-red-500" />
+                            {selectedCve}
+                        </DialogTitle>
+                        <DialogDescription>Vulnerability details from National Vulnerability Database</DialogDescription>
+                    </DialogHeader>
+                    
+                    {cveLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                        </div>
+                    ) : cveData?.error ? (
+                        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-400">
+                            {cveData.error}
+                        </div>
+                    ) : cveData ? (
+                        <div className="space-y-4">
+                            {/* Severity & Score */}
+                            <div className="flex items-center gap-4">
+                                <Badge className={
+                                    cveData.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-400 text-lg px-3 py-1' :
+                                    cveData.severity === 'HIGH' ? 'bg-orange-500/20 text-orange-400 text-lg px-3 py-1' :
+                                    cveData.severity === 'MEDIUM' ? 'bg-yellow-500/20 text-yellow-400 text-lg px-3 py-1' :
+                                    'bg-green-500/20 text-green-400 text-lg px-3 py-1'
+                                }>{cveData.severity}</Badge>
+                                {cveData.score && <span className="text-2xl font-bold">{cveData.score}</span>}
+                            </div>
+
+                            {/* Description */}
+                            <div>
+                                <h4 className="text-sm font-semibold mb-2">Description</h4>
+                                <p className="text-sm text-muted-foreground">{cveData.description}</p>
+                            </div>
+
+                            {/* CVSS Details */}
+                            {cveData.cvss_v3 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold mb-2">CVSS v{cveData.cvss_v3.version} Metrics</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                                        {cveData.cvss_v3.attack_vector && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Attack Vector:</span> <span className="font-medium">{cveData.cvss_v3.attack_vector}</span></div>}
+                                        {cveData.cvss_v3.attack_complexity && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Complexity:</span> <span className="font-medium">{cveData.cvss_v3.attack_complexity}</span></div>}
+                                        {cveData.cvss_v3.privileges_required && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Privileges:</span> <span className="font-medium">{cveData.cvss_v3.privileges_required}</span></div>}
+                                        {cveData.cvss_v3.user_interaction && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">User Interaction:</span> <span className="font-medium">{cveData.cvss_v3.user_interaction}</span></div>}
+                                        {cveData.cvss_v3.confidentiality_impact && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Confidentiality:</span> <span className="font-medium">{cveData.cvss_v3.confidentiality_impact}</span></div>}
+                                        {cveData.cvss_v3.integrity_impact && <div className="p-2 bg-background/50 border border-border/20"><span className="text-muted-foreground">Integrity:</span> <span className="font-medium">{cveData.cvss_v3.integrity_impact}</span></div>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Affected Products */}
+                            {cveData.affected_products && cveData.affected_products.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold mb-2">Affected Products ({cveData.affected_products.length})</h4>
+                                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                                        {cveData.affected_products.slice(0, 10).map((product, i) => (
+                                            <div key={i} className="text-xs p-2 bg-background/50 border border-border/20">
+                                                <span className="font-medium">{product.vendor}</span> / <span>{product.product}</span>
+                                                {(product.version_start || product.version_end) && (
+                                                    <span className="text-muted-foreground ml-2">
+                                                        ({product.version_start && `>= ${product.version_start}`} {product.version_end && `< ${product.version_end}`})
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Weaknesses */}
+                            {cveData.weaknesses && cveData.weaknesses.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold mb-2">Weaknesses (CWE)</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {cveData.weaknesses.map((cwe, i) => (
+                                            <Badge key={i} variant="outline">{cwe}</Badge>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* References */}
+                            {cveData.references && cveData.references.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold mb-2">References</h4>
+                                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                                        {cveData.references.slice(0, 5).map((ref, i) => (
+                                            <a 
+                                                key={i} 
+                                                href={ref.url} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="text-xs text-primary hover:underline flex items-center gap-1 truncate"
+                                            >
+                                                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                                {ref.url}
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Dates */}
+                            <div className="flex gap-4 text-xs text-muted-foreground pt-2 border-t border-border/20">
+                                {cveData.published && <span>Published: {new Date(cveData.published).toLocaleDateString()}</span>}
+                                {cveData.last_modified && <span>Modified: {new Date(cveData.last_modified).toLocaleDateString()}</span>}
+                            </div>
+                        </div>
+                    ) : null}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
@@ -1137,6 +1288,432 @@ function ReportsPage() {
     );
 }
 
+// Bulk Scan Page
+function BulkScanPage() {
+    const [targets, setTargets] = useState('');
+    const [cidr, setCidr] = useState('');
+    const [scanType, setScanType] = useState('recon');
+    const [loading, setLoading] = useState(false);
+    const [bulkScans, setBulkScans] = useState([]);
+    const [selectedBulkScan, setSelectedBulkScan] = useState(null);
+
+    useEffect(() => { fetchBulkScans(); }, []);
+
+    const fetchBulkScans = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/api/bulk-scans`);
+            setBulkScans(response.data.bulk_scans || []);
+        } catch (error) { console.error('Failed to fetch bulk scans:', error); }
+    };
+
+    const startBulkScan = async () => {
+        const targetList = targets.split('\n').map(t => t.trim()).filter(t => t);
+        if (!targetList.length && !cidr.trim()) {
+            toast.error('Please enter targets or CIDR range');
+            return;
+        }
+        setLoading(true);
+        try {
+            const response = await axios.post(`${API_URL}/api/bulk-scans`, {
+                scan_type: scanType,
+                targets: targetList,
+                cidr: cidr.trim() || null
+            });
+            toast.success(`Bulk scan started for ${response.data.total_targets} targets`);
+            setBulkScans(prev => [response.data, ...prev]);
+            setSelectedBulkScan(response.data);
+            setTargets('');
+            setCidr('');
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to start bulk scan');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const refreshBulkScan = async (id) => {
+        try {
+            const response = await axios.get(`${API_URL}/api/bulk-scans/${id}`);
+            setBulkScans(prev => prev.map(s => s.id === id ? response.data : s));
+            if (selectedBulkScan?.id === id) {
+                setSelectedBulkScan(response.data);
+            }
+        } catch (error) { console.error('Failed to refresh:', error); }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="bulk-scan-page">
+            <Header title="Bulk Scan" subtitle="Scan multiple targets or CIDR ranges at once" />
+            <div className="flex-1 p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+                <div className="space-y-4">
+                    <Card className="border-border/40 bg-card/20" data-testid="bulk-scan-form">
+                        <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Layers className="w-5 h-5 text-primary" />New Bulk Scan</CardTitle></CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>Targets (one per line)</Label>
+                                <Textarea 
+                                    placeholder="example.com&#10;192.168.1.1&#10;target.org" 
+                                    value={targets} 
+                                    onChange={(e) => setTargets(e.target.value)} 
+                                    className="bg-background min-h-24 font-mono text-sm"
+                                    data-testid="bulk-targets-input"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Or CIDR Range</Label>
+                                <Input 
+                                    placeholder="192.168.1.0/24" 
+                                    value={cidr} 
+                                    onChange={(e) => setCidr(e.target.value)} 
+                                    className="bg-background font-mono"
+                                    data-testid="cidr-input"
+                                />
+                                <p className="text-xs text-muted-foreground">Max /24 (256 hosts)</p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Scan Type</Label>
+                                <Select value={scanType} onValueChange={setScanType}>
+                                    <SelectTrigger className="bg-background" data-testid="scan-type-select">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="recon">Reconnaissance</SelectItem>
+                                        <SelectItem value="vuln">Vulnerability</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <Button className="w-full" onClick={startBulkScan} disabled={loading} data-testid="start-bulk-scan-button">
+                                {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Starting...</> : <><Play className="w-4 h-4 mr-2" />Start Bulk Scan</>}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-border/40 bg-card/20" data-testid="bulk-scan-history">
+                        <CardHeader><CardTitle className="text-lg">Bulk Scan History</CardTitle></CardHeader>
+                        <CardContent className="p-0">
+                            <ScrollArea className="h-48">
+                                <div className="p-4 space-y-2">
+                                    {bulkScans.length > 0 ? bulkScans.map((scan) => (
+                                        <button 
+                                            key={scan.id} 
+                                            onClick={() => { setSelectedBulkScan(scan); refreshBulkScan(scan.id); }}
+                                            className={`w-full text-left p-3 border border-border/40 hover:bg-accent transition-colors ${selectedBulkScan?.id === scan.id ? 'bg-accent' : ''}`}
+                                            data-testid={`bulk-scan-${scan.id}`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-medium text-sm">{scan.total_targets} targets</span>
+                                                <Badge variant="outline" className={scan.status === 'completed' ? 'border-green-500/30 text-green-400' : scan.status === 'running' ? 'border-blue-500/30 text-blue-400' : 'border-yellow-500/30 text-yellow-400'}>
+                                                    {scan.status}
+                                                </Badge>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-1">{scan.scan_type} • {new Date(scan.created_at).toLocaleString()}</div>
+                                            {scan.status === 'running' && (
+                                                <Progress value={(scan.completed / scan.total_targets) * 100} className="mt-2 h-1" />
+                                            )}
+                                        </button>
+                                    )) : (
+                                        <div className="text-center py-4 text-muted-foreground text-sm">No bulk scans yet</div>
+                                    )}
+                                </div>
+                            </ScrollArea>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                <div className="lg:col-span-2 overflow-hidden">
+                    <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="bulk-scan-results">
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle className="text-lg">
+                                {selectedBulkScan ? `Results: ${selectedBulkScan.completed}/${selectedBulkScan.total_targets} completed` : 'Bulk Scan Results'}
+                            </CardTitle>
+                            {selectedBulkScan && (
+                                <Button variant="outline" size="sm" onClick={() => refreshBulkScan(selectedBulkScan.id)} data-testid="refresh-bulk-scan">
+                                    <RefreshCw className="w-4 h-4" />
+                                </Button>
+                            )}
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-auto">
+                            {selectedBulkScan?.results ? (
+                                <div className="space-y-2">
+                                    {selectedBulkScan.results.map((result, i) => (
+                                        <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between">
+                                            <div>
+                                                <span className="font-mono text-sm">{result.target}</span>
+                                                {result.vulnerabilities_count > 0 && (
+                                                    <Badge variant="outline" className="ml-2 text-xs">{result.vulnerabilities_count} vulns</Badge>
+                                                )}
+                                            </div>
+                                            <Badge className={result.status === 'completed' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
+                                                {result.status}
+                                            </Badge>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : selectedBulkScan?.status === 'running' ? (
+                                <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+                                    <Loader2 className="w-12 h-12 animate-spin mb-4 text-primary" />
+                                    <p>Scanning in progress...</p>
+                                    <p className="text-sm">{selectedBulkScan.completed} of {selectedBulkScan.total_targets} completed</p>
+                                </div>
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-muted-foreground">
+                                    <div className="text-center">
+                                        <Layers className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                                        <p>Select a bulk scan to view results</p>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Scheduled Scans Page
+function ScheduledScansPage() {
+    const [scheduledScans, setScheduledScans] = useState([]);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [formData, setFormData] = useState({
+        name: '',
+        scan_type: 'recon',
+        targets: '',
+        schedule_type: 'daily',
+        schedule_time: '09:00',
+        schedule_day: 0
+    });
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => { fetchScheduledScans(); }, []);
+
+    const fetchScheduledScans = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/api/scheduled-scans`);
+            setScheduledScans(response.data.scheduled_scans || []);
+        } catch (error) { console.error('Failed to fetch scheduled scans:', error); }
+    };
+
+    const createScheduledScan = async () => {
+        const targetList = formData.targets.split('\n').map(t => t.trim()).filter(t => t);
+        if (!formData.name.trim() || !targetList.length) {
+            toast.error('Please fill in name and targets');
+            return;
+        }
+        setLoading(true);
+        try {
+            await axios.post(`${API_URL}/api/scheduled-scans`, {
+                name: formData.name.trim(),
+                scan_type: formData.scan_type,
+                targets: targetList,
+                schedule_type: formData.schedule_type,
+                schedule_time: formData.schedule_time,
+                schedule_day: formData.schedule_type !== 'daily' ? parseInt(formData.schedule_day) : null
+            });
+            toast.success('Scheduled scan created');
+            setShowCreateModal(false);
+            setFormData({ name: '', scan_type: 'recon', targets: '', schedule_type: 'daily', schedule_time: '09:00', schedule_day: 0 });
+            fetchScheduledScans();
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Failed to create scheduled scan');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleSchedule = async (id, enabled) => {
+        try {
+            await axios.patch(`${API_URL}/api/scheduled-scans/${id}?enabled=${!enabled}`);
+            fetchScheduledScans();
+            toast.success(enabled ? 'Schedule disabled' : 'Schedule enabled');
+        } catch (error) { toast.error('Failed to update schedule'); }
+    };
+
+    const deleteSchedule = async (id) => {
+        try {
+            await axios.delete(`${API_URL}/api/scheduled-scans/${id}`);
+            fetchScheduledScans();
+            toast.success('Schedule deleted');
+        } catch (error) { toast.error('Failed to delete schedule'); }
+    };
+
+    const runNow = async (id) => {
+        try {
+            await axios.post(`${API_URL}/api/scheduled-scans/${id}/run`);
+            toast.success('Scan started');
+        } catch (error) { toast.error('Failed to start scan'); }
+    };
+
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    return (
+        <div className="flex-1 flex flex-col" data-testid="scheduled-scans-page">
+            <Header title="Scheduled Scans" subtitle="Automate recurring security scans" />
+            <div className="flex-1 p-6 overflow-auto">
+                <div className="max-w-4xl mx-auto space-y-6">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h2 className="text-xl font-semibold">Your Schedules</h2>
+                            <p className="text-sm text-muted-foreground">{scheduledScans.length} scheduled scan{scheduledScans.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <Button onClick={() => setShowCreateModal(true)} data-testid="create-schedule-button">
+                            <Plus className="w-4 h-4 mr-2" />New Schedule
+                        </Button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {scheduledScans.length > 0 ? scheduledScans.map((schedule) => (
+                            <Card key={schedule.id} className="border-border/40 bg-card/20" data-testid={`schedule-${schedule.id}`}>
+                                <CardContent className="p-4">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <h3 className="font-semibold">{schedule.name}</h3>
+                                                <Badge variant="outline">{schedule.scan_type}</Badge>
+                                                <Badge className={schedule.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}>
+                                                    {schedule.enabled ? 'Active' : 'Paused'}
+                                                </Badge>
+                                            </div>
+                                            <div className="text-sm text-muted-foreground space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <Timer className="w-4 h-4" />
+                                                    {schedule.schedule_type === 'daily' && `Daily at ${schedule.schedule_time}`}
+                                                    {schedule.schedule_type === 'weekly' && `Weekly on ${dayNames[schedule.schedule_day]} at ${schedule.schedule_time}`}
+                                                    {schedule.schedule_type === 'monthly' && `Monthly on day ${schedule.schedule_day} at ${schedule.schedule_time}`}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Target className="w-4 h-4" />
+                                                    {schedule.targets.length} target{schedule.targets.length !== 1 ? 's' : ''}: {schedule.targets.slice(0, 3).join(', ')}{schedule.targets.length > 3 ? '...' : ''}
+                                                </div>
+                                                {schedule.next_run && schedule.enabled && (
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-4 h-4" />
+                                                        Next run: {new Date(schedule.next_run).toLocaleString()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button variant="outline" size="sm" onClick={() => runNow(schedule.id)} data-testid={`run-now-${schedule.id}`}>
+                                                <Play className="w-4 h-4" />
+                                            </Button>
+                                            <Switch checked={schedule.enabled} onCheckedChange={() => toggleSchedule(schedule.id, schedule.enabled)} data-testid={`toggle-${schedule.id}`} />
+                                            <Button variant="ghost" size="sm" onClick={() => deleteSchedule(schedule.id)} className="text-red-400 hover:text-red-300" data-testid={`delete-${schedule.id}`}>
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )) : (
+                            <Card className="border-border/40 bg-card/20">
+                                <CardContent className="p-8 text-center">
+                                    <Timer className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-30" />
+                                    <p className="text-muted-foreground">No scheduled scans yet</p>
+                                    <p className="text-sm text-muted-foreground">Create a schedule to automate your security scans</p>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Create Schedule Modal */}
+            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Create Scheduled Scan</DialogTitle>
+                        <DialogDescription>Set up automatic recurring scans</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Schedule Name</Label>
+                            <Input 
+                                placeholder="Weekly Security Audit" 
+                                value={formData.name} 
+                                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                className="bg-background"
+                                data-testid="schedule-name-input"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Targets (one per line)</Label>
+                            <Textarea 
+                                placeholder="example.com&#10;192.168.1.1" 
+                                value={formData.targets} 
+                                onChange={(e) => setFormData({...formData, targets: e.target.value})}
+                                className="bg-background min-h-20 font-mono text-sm"
+                                data-testid="schedule-targets-input"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Scan Type</Label>
+                                <Select value={formData.scan_type} onValueChange={(v) => setFormData({...formData, scan_type: v})}>
+                                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="recon">Reconnaissance</SelectItem>
+                                        <SelectItem value="vuln">Vulnerability</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Frequency</Label>
+                                <Select value={formData.schedule_type} onValueChange={(v) => setFormData({...formData, schedule_type: v})}>
+                                    <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="daily">Daily</SelectItem>
+                                        <SelectItem value="weekly">Weekly</SelectItem>
+                                        <SelectItem value="monthly">Monthly</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Time (UTC)</Label>
+                                <Input 
+                                    type="time" 
+                                    value={formData.schedule_time} 
+                                    onChange={(e) => setFormData({...formData, schedule_time: e.target.value})}
+                                    className="bg-background"
+                                />
+                            </div>
+                            {formData.schedule_type === 'weekly' && (
+                                <div className="space-y-2">
+                                    <Label>Day of Week</Label>
+                                    <Select value={formData.schedule_day.toString()} onValueChange={(v) => setFormData({...formData, schedule_day: parseInt(v)})}>
+                                        <SelectTrigger className="bg-background"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            {dayNames.map((day, i) => <SelectItem key={i} value={i.toString()}>{day}</SelectItem>)}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
+                            {formData.schedule_type === 'monthly' && (
+                                <div className="space-y-2">
+                                    <Label>Day of Month</Label>
+                                    <Input 
+                                        type="number" 
+                                        min="1" 
+                                        max="28" 
+                                        value={formData.schedule_day || 1} 
+                                        onChange={(e) => setFormData({...formData, schedule_day: parseInt(e.target.value)})}
+                                        className="bg-background"
+                                    />
+                                </div>
+                            )}
+                        </div>
+                        <Button className="w-full" onClick={createScheduledScan} disabled={loading} data-testid="save-schedule-button">
+                            {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : 'Create Schedule'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}
+
 // Settings Page
 function SettingsPage() {
     const { user } = useAuth();
@@ -1217,6 +1794,8 @@ function AppRoutes() {
             <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><MainLayout><DashboardPage /></MainLayout></ProtectedRoute>} />
             <Route path="/recon" element={<ProtectedRoute><MainLayout><ReconPage /></MainLayout></ProtectedRoute>} />
+            <Route path="/bulk-scan" element={<ProtectedRoute><MainLayout><BulkScanPage /></MainLayout></ProtectedRoute>} />
+            <Route path="/scheduled" element={<ProtectedRoute><MainLayout><ScheduledScansPage /></MainLayout></ProtectedRoute>} />
             <Route path="/vulnerabilities" element={<ProtectedRoute><MainLayout><VulnerabilitiesPage /></MainLayout></ProtectedRoute>} />
             <Route path="/network" element={<ProtectedRoute><MainLayout><NetworkPage /></MainLayout></ProtectedRoute>} />
             <Route path="/assistant" element={<ProtectedRoute><MainLayout><AssistantPage /></MainLayout></ProtectedRoute>} />
