@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { useState, useEffect, createContext, useContext, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import axios from 'axios';
@@ -1207,6 +1207,7 @@ function ReportsPage() {
     const [selectedScans, setSelectedScans] = useState([]);
     const [reports, setReports] = useState([]);
     const [generatingReport, setGeneratingReport] = useState(false);
+    const [downloadingPdf, setDownloadingPdf] = useState(null);
 
     useEffect(() => { fetchData(); }, []);
 
@@ -1232,6 +1233,28 @@ function ReportsPage() {
             setSelectedScans([]);
         } catch (error) { toast.error('Failed to generate report'); } 
         finally { setGeneratingReport(false); }
+    };
+
+    const downloadPdf = async (reportId) => {
+        setDownloadingPdf(reportId);
+        try {
+            const response = await axios.get(`${API_URL}/api/reports/${reportId}/pdf`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `security_report_${reportId.slice(0, 8)}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success('PDF downloaded');
+        } catch (error) {
+            toast.error('Failed to download PDF');
+        } finally {
+            setDownloadingPdf(null);
+        }
     };
 
     return (
@@ -1268,8 +1291,25 @@ function ReportsPage() {
                                 {reports.map((report) => (
                                     <Card key={report.id} className="border-border/40 bg-background/50" data-testid={`report-${report.id}`}>
                                         <CardContent className="p-4">
-                                            <h3 className="font-medium text-sm">{report.title}</h3>
-                                            <p className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()}</p>
+                                            <div className="flex items-start justify-between mb-2">
+                                                <div>
+                                                    <h3 className="font-medium text-sm">{report.title}</h3>
+                                                    <p className="text-xs text-muted-foreground">{new Date(report.created_at).toLocaleString()}</p>
+                                                </div>
+                                                <Button 
+                                                    variant="outline" 
+                                                    size="sm" 
+                                                    onClick={() => downloadPdf(report.id)}
+                                                    disabled={downloadingPdf === report.id}
+                                                    data-testid={`download-pdf-${report.id}`}
+                                                >
+                                                    {downloadingPdf === report.id ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                                    ) : (
+                                                        <><Download className="w-4 h-4 mr-1" />PDF</>
+                                                    )}
+                                                </Button>
+                                            </div>
                                             <div className="grid grid-cols-4 gap-2 mt-3">
                                                 <div className="p-2 bg-red-500/10 text-center"><p className="text-lg font-bold text-red-400">{report.summary?.critical || 0}</p><p className="text-xs">Critical</p></div>
                                                 <div className="p-2 bg-orange-500/10 text-center"><p className="text-lg font-bold text-orange-400">{report.summary?.high || 0}</p><p className="text-xs">High</p></div>
@@ -1296,8 +1336,86 @@ function BulkScanPage() {
     const [loading, setLoading] = useState(false);
     const [bulkScans, setBulkScans] = useState([]);
     const [selectedBulkScan, setSelectedBulkScan] = useState(null);
+    const [wsConnected, setWsConnected] = useState(false);
+    const wsRef = useRef(null);
 
     useEffect(() => { fetchBulkScans(); }, []);
+
+    // WebSocket connection for real-time progress
+    const connectWebSocket = useCallback((scanId) => {
+        if (wsRef.current) {
+            wsRef.current.close();
+        }
+        
+        const wsUrl = API_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+        const ws = new WebSocket(`${wsUrl}/api/ws/scan/${scanId}`);
+        
+        ws.onopen = () => {
+            setWsConnected(true);
+            console.log('WebSocket connected for scan:', scanId);
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            console.log('WS message:', data);
+            
+            if (data.type === 'progress' || data.type === 'completed' || data.type === 'started') {
+                // Update bulkScans list
+                setBulkScans(prev => prev.map(s => 
+                    s.id === scanId ? {
+                        ...s,
+                        completed: data.completed,
+                        failed: data.failed,
+                        status: data.status,
+                        results: data.type === 'progress' && s.results 
+                            ? [...s.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean)
+                            : s.results
+                    } : s
+                ));
+                
+                // Update selectedBulkScan using functional update to avoid stale closure
+                setSelectedBulkScan(prev => {
+                    if (prev?.id === scanId) {
+                        return {
+                            ...prev,
+                            completed: data.completed,
+                            failed: data.failed,
+                            status: data.status,
+                            results: data.type === 'progress' && prev.results
+                                ? [...prev.results.filter(r => r.target !== data.result?.target), data.result].filter(Boolean)
+                                : prev.results
+                        };
+                    }
+                    return prev;
+                });
+                
+                if (data.type === 'completed') {
+                    toast.success('Bulk scan completed');
+                    fetchBulkScans();
+                }
+            }
+        };
+        
+        ws.onclose = () => {
+            setWsConnected(false);
+            console.log('WebSocket disconnected');
+        };
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+        
+        wsRef.current = ws;
+    }, []); // Empty deps - no stale closure issues
+
+    // Cleanup WebSocket on unmount
+    useEffect(() => {
+        return () => {
+            if (wsRef.current) {
+                wsRef.current.close();
+            }
+        };
+    }, []);
 
     const fetchBulkScans = async () => {
         try {
@@ -1320,10 +1438,14 @@ function BulkScanPage() {
                 cidr: cidr.trim() || null
             });
             toast.success(`Bulk scan started for ${response.data.total_targets} targets`);
-            setBulkScans(prev => [response.data, ...prev]);
-            setSelectedBulkScan(response.data);
+            const newScan = { ...response.data, results: [] };
+            setBulkScans(prev => [newScan, ...prev]);
+            setSelectedBulkScan(newScan);
             setTargets('');
             setCidr('');
+            
+            // Connect WebSocket for real-time updates
+            connectWebSocket(response.data.id);
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Failed to start bulk scan');
         } finally {
@@ -1423,20 +1545,36 @@ function BulkScanPage() {
                 <div className="lg:col-span-2 overflow-hidden">
                     <Card className="h-full border-border/40 bg-card/20 flex flex-col" data-testid="bulk-scan-results">
                         <CardHeader className="flex flex-row items-center justify-between">
-                            <CardTitle className="text-lg">
-                                {selectedBulkScan ? `Results: ${selectedBulkScan.completed}/${selectedBulkScan.total_targets} completed` : 'Bulk Scan Results'}
-                            </CardTitle>
+                            <div className="flex items-center gap-3">
+                                <CardTitle className="text-lg">
+                                    {selectedBulkScan ? `Results: ${selectedBulkScan.completed || 0}/${selectedBulkScan.total_targets} completed` : 'Bulk Scan Results'}
+                                </CardTitle>
+                                {wsConnected && selectedBulkScan?.status === 'running' && (
+                                    <Badge variant="outline" className="border-green-500/30 text-green-400 animate-pulse">
+                                        <Wifi className="w-3 h-3 mr-1" /> Live
+                                    </Badge>
+                                )}
+                            </div>
                             {selectedBulkScan && (
                                 <Button variant="outline" size="sm" onClick={() => refreshBulkScan(selectedBulkScan.id)} data-testid="refresh-bulk-scan">
                                     <RefreshCw className="w-4 h-4" />
                                 </Button>
                             )}
                         </CardHeader>
+                        {selectedBulkScan?.status === 'running' && (
+                            <div className="px-6 pb-2">
+                                <Progress value={(selectedBulkScan.completed / selectedBulkScan.total_targets) * 100} className="h-2" />
+                                <p className="text-xs text-muted-foreground mt-1 text-center">
+                                    {Math.round((selectedBulkScan.completed / selectedBulkScan.total_targets) * 100)}% complete
+                                    {selectedBulkScan.failed > 0 && ` • ${selectedBulkScan.failed} failed`}
+                                </p>
+                            </div>
+                        )}
                         <CardContent className="flex-1 overflow-auto">
-                            {selectedBulkScan?.results ? (
+                            {selectedBulkScan?.results && selectedBulkScan.results.length > 0 ? (
                                 <div className="space-y-2">
                                     {selectedBulkScan.results.map((result, i) => (
-                                        <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between">
+                                        <div key={i} className="p-3 bg-background/50 border border-border/20 flex items-center justify-between animate-in fade-in duration-300">
                                             <div>
                                                 <span className="font-mono text-sm">{result.target}</span>
                                                 {result.vulnerabilities_count > 0 && (

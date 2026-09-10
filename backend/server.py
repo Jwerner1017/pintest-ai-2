@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -7,7 +8,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Set
 import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
@@ -15,8 +16,16 @@ import bcrypt
 import ipaddress
 import httpx
 import asyncio
+import io
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from scanner import perform_recon_scan, generate_vuln_scan_results, generate_network_scan_results, is_valid_target
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -49,6 +58,111 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ==================== WEBSOCKET CONNECTION MANAGER ====================
+
+class ConnectionManager:
+    """Manages WebSocket connections for real-time scan progress updates"""
+    def __init__(self):
+        self.active_connections: Dict[str, Set[WebSocket]] = {}  # scan_id -> set of websockets
+    
+    async def connect(self, websocket: WebSocket, scan_id: str):
+        await websocket.accept()
+        if scan_id not in self.active_connections:
+            self.active_connections[scan_id] = set()
+        self.active_connections[scan_id].add(websocket)
+        logger.info(f"WebSocket connected for scan {scan_id}")
+    
+    def disconnect(self, websocket: WebSocket, scan_id: str):
+        if scan_id in self.active_connections:
+            self.active_connections[scan_id].discard(websocket)
+            if not self.active_connections[scan_id]:
+                del self.active_connections[scan_id]
+        logger.info(f"WebSocket disconnected for scan {scan_id}")
+    
+    async def send_progress(self, scan_id: str, data: dict):
+        if scan_id in self.active_connections:
+            dead_connections = set()
+            for connection in self.active_connections[scan_id]:
+                try:
+                    await connection.send_json(data)
+                except Exception:
+                    dead_connections.add(connection)
+            # Clean up dead connections
+            for conn in dead_connections:
+                self.active_connections[scan_id].discard(conn)
+
+ws_manager = ConnectionManager()
+
+# ==================== SCHEDULER SETUP ====================
+
+scheduler = AsyncIOScheduler()
+
+async def check_scheduled_scans():
+    """Check and execute due scheduled scans"""
+    try:
+        now = datetime.now(timezone.utc)
+        
+        # Find enabled schedules where next_run is in the past
+        due_schedules = await db.scheduled_scans.find({
+            "enabled": True,
+            "next_run": {"$lte": now.isoformat()}
+        }).to_list(100)
+        
+        for schedule in due_schedules:
+            logger.info(f"Executing scheduled scan: {schedule['name']}")
+            
+            # Create a bulk scan from the scheduled scan
+            bulk_scan_id = str(uuid.uuid4())
+            bulk_scan_doc = {
+                "id": bulk_scan_id,
+                "user_id": schedule["user_id"],
+                "scheduled_scan_id": schedule["id"],
+                "scan_type": schedule["scan_type"],
+                "targets": schedule["targets"],
+                "total_targets": len(schedule["targets"]),
+                "completed": 0,
+                "failed": 0,
+                "status": "pending",
+                "created_at": now.isoformat()
+            }
+            await db.bulk_scans.insert_one(bulk_scan_doc)
+            
+            # Calculate next run time
+            next_run = calculate_next_run(
+                schedule["schedule_type"],
+                schedule["schedule_time"],
+                schedule.get("schedule_day")
+            )
+            
+            # Update schedule with last_run and next_run
+            await db.scheduled_scans.update_one(
+                {"id": schedule["id"]},
+                {"$set": {
+                    "last_run": now.isoformat(),
+                    "next_run": next_run
+                }}
+            )
+            
+            # Execute the scan in background
+            asyncio.create_task(run_bulk_scan_job(
+                bulk_scan_id,
+                schedule["user_id"],
+                schedule["targets"],
+                schedule["scan_type"]
+            ))
+            
+            # Log activity
+            await db.activity_log.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": schedule["user_id"],
+                "action": f"Auto-executed scheduled scan: {schedule['name']}",
+                "target": f"{len(schedule['targets'])} targets",
+                "created_at": now.isoformat()
+            })
+            
+    except Exception as e:
+        logger.error(f"Scheduler error: {e}")
 
 # ==================== MODELS ====================
 
@@ -646,57 +760,104 @@ def parse_cidr(cidr: str) -> List[str]:
         raise HTTPException(status_code=400, detail=f"Invalid CIDR: {str(e)}")
 
 async def run_bulk_scan_job(bulk_scan_id: str, user_id: str, targets: List[str], scan_type: str):
-    """Background task to run bulk scans"""
+    """Background task to run bulk scans with concurrent execution"""
     results = []
     completed = 0
     failed = 0
+    lock = asyncio.Lock()
     
-    for target in targets:
-        try:
-            # Update progress
-            await db.bulk_scans.update_one(
-                {"id": bulk_scan_id},
-                {"$set": {"completed": completed, "status": "running"}}
-            )
-            
-            # Perform scan based on type
-            if scan_type == "recon":
-                scan_result = await perform_recon_scan(target)
-            elif scan_type == "vuln":
-                recon_result = await perform_recon_scan(target)
-                scan_result = generate_vuln_scan_results(target, recon_result.get("ports", []))
-            else:
-                scan_result = {"target": target, "error": "Unknown scan type"}
-            
-            # Store individual scan result
-            scan_id = str(uuid.uuid4())
-            scan_doc = {
-                "id": scan_id,
-                "user_id": user_id,
-                "bulk_scan_id": bulk_scan_id,
-                "scan_type": scan_type,
-                "target": target,
-                "status": "completed" if "error" not in scan_result else "failed",
-                "results": scan_result,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-            await db.scans.insert_one(scan_doc)
-            
-            results.append({
-                "target": target,
-                "scan_id": scan_id,
-                "status": "completed" if "error" not in scan_result else "failed",
-                "vulnerabilities_count": len(scan_result.get("vulnerabilities", []))
-            })
-            completed += 1
-            
-            # Small delay to avoid overwhelming targets
-            await asyncio.sleep(0.5)
-            
-        except Exception as e:
-            logger.error(f"Bulk scan error for {target}: {e}")
-            results.append({"target": target, "status": "failed", "error": str(e)})
-            failed += 1
+    # Semaphore to limit concurrent scans (max 5 at a time)
+    semaphore = asyncio.Semaphore(5)
+    
+    async def scan_target(target: str) -> dict:
+        """Scan a single target with semaphore control"""
+        nonlocal completed, failed
+        
+        async with semaphore:
+            try:
+                # Perform scan based on type
+                if scan_type == "recon":
+                    scan_result = await perform_recon_scan(target)
+                elif scan_type == "vuln":
+                    recon_result = await perform_recon_scan(target)
+                    scan_result = generate_vuln_scan_results(target, recon_result.get("ports", []))
+                else:
+                    scan_result = {"target": target, "error": "Unknown scan type"}
+                
+                # Store individual scan result
+                scan_id = str(uuid.uuid4())
+                scan_doc = {
+                    "id": scan_id,
+                    "user_id": user_id,
+                    "bulk_scan_id": bulk_scan_id,
+                    "scan_type": scan_type,
+                    "target": target,
+                    "status": "completed" if "error" not in scan_result else "failed",
+                    "results": scan_result,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await db.scans.insert_one(scan_doc)
+                
+                result = {
+                    "target": target,
+                    "scan_id": scan_id,
+                    "status": "completed" if "error" not in scan_result else "failed",
+                    "vulnerabilities_count": len(scan_result.get("vulnerabilities", []))
+                }
+                
+                # Update progress with lock
+                async with lock:
+                    completed += 1
+                    await db.bulk_scans.update_one(
+                        {"id": bulk_scan_id},
+                        {"$set": {"completed": completed, "status": "running"}}
+                    )
+                    
+                    # Send WebSocket progress update
+                    await ws_manager.send_progress(bulk_scan_id, {
+                        "type": "progress",
+                        "scan_id": bulk_scan_id,
+                        "target": target,
+                        "completed": completed,
+                        "total": len(targets),
+                        "failed": failed,
+                        "status": "running",
+                        "result": result
+                    })
+                
+                return result
+                
+            except Exception as e:
+                logger.error(f"Bulk scan error for {target}: {e}")
+                async with lock:
+                    failed += 1
+                    await ws_manager.send_progress(bulk_scan_id, {
+                        "type": "error",
+                        "scan_id": bulk_scan_id,
+                        "target": target,
+                        "error": str(e),
+                        "completed": completed,
+                        "total": len(targets),
+                        "failed": failed
+                    })
+                return {"target": target, "status": "failed", "error": str(e)}
+    
+    # Mark as running
+    await db.bulk_scans.update_one(
+        {"id": bulk_scan_id},
+        {"$set": {"status": "running"}}
+    )
+    
+    # Send initial WebSocket notification
+    await ws_manager.send_progress(bulk_scan_id, {
+        "type": "started",
+        "scan_id": bulk_scan_id,
+        "total": len(targets),
+        "status": "running"
+    })
+    
+    # Run all scans concurrently with semaphore limiting
+    results = await asyncio.gather(*[scan_target(target) for target in targets])
     
     # Update final status
     await db.bulk_scans.update_one(
@@ -711,6 +872,16 @@ async def run_bulk_scan_job(bulk_scan_id: str, user_id: str, targets: List[str],
             }
         }
     )
+    
+    # Send completion WebSocket notification
+    await ws_manager.send_progress(bulk_scan_id, {
+        "type": "completed",
+        "scan_id": bulk_scan_id,
+        "completed": completed,
+        "total": len(targets),
+        "failed": failed,
+        "status": "completed"
+    })
     
     # Log activity
     await db.activity_log.insert_one({
@@ -1005,6 +1176,179 @@ async def run_scheduled_scan_now(
     
     return {"message": "Scheduled scan started", "bulk_scan_id": bulk_scan_id}
 
+# ==================== WEBSOCKET ENDPOINT ====================
+
+@api_router.websocket("/ws/scan/{scan_id}")
+async def websocket_scan_progress(websocket: WebSocket, scan_id: str):
+    """WebSocket endpoint for real-time scan progress updates"""
+    await ws_manager.connect(websocket, scan_id)
+    try:
+        # Send initial status
+        scan = await db.bulk_scans.find_one({"id": scan_id}, {"_id": 0})
+        if scan:
+            await websocket.send_json({
+                "type": "status",
+                "scan_id": scan_id,
+                "status": scan.get("status"),
+                "completed": scan.get("completed", 0),
+                "total": scan.get("total_targets", 0),
+                "failed": scan.get("failed", 0)
+            })
+        
+        # Keep connection alive and wait for messages
+        while True:
+            try:
+                # Wait for any message (ping/pong or close)
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                if data == "ping":
+                    await websocket.send_text("pong")
+            except asyncio.TimeoutError:
+                # Send heartbeat
+                await websocket.send_json({"type": "heartbeat"})
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, scan_id)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        ws_manager.disconnect(websocket, scan_id)
+
+# ==================== PDF REPORT GENERATION ====================
+
+def generate_pdf_report(report_data: dict) -> io.BytesIO:
+    """Generate a PDF security report"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+    
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name='Title2', parent=styles['Title'], fontSize=24, spaceAfter=30))
+    styles.add(ParagraphStyle(name='Heading2Custom', parent=styles['Heading2'], fontSize=16, spaceAfter=12, textColor=colors.HexColor('#3b82f6')))
+    styles.add(ParagraphStyle(name='BodySmall', parent=styles['Normal'], fontSize=10))
+    
+    story = []
+    
+    # Title
+    story.append(Paragraph("PentestAI Security Report", styles['Title2']))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles['BodySmall']))
+    story.append(Spacer(1, 30))
+    
+    # Executive Summary
+    story.append(Paragraph("Executive Summary", styles['Heading2Custom']))
+    summary = report_data.get("summary", {})
+    summary_data = [
+        ["Total Vulnerabilities", str(summary.get("total_vulnerabilities", 0))],
+        ["Critical", str(summary.get("critical", 0))],
+        ["High", str(summary.get("high", 0))],
+        ["Medium", str(summary.get("medium", 0))],
+        ["Low", str(summary.get("low", 0))],
+    ]
+    summary_table = Table(summary_data, colWidths=[200, 100])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#0f172a'), colors.HexColor('#1e293b')]),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.white),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 20))
+    
+    # Scans Included
+    story.append(Paragraph("Scans Included", styles['Heading2Custom']))
+    scans = report_data.get("scans", [])
+    for scan in scans[:10]:  # Limit to 10 scans
+        story.append(Paragraph(f"• {scan.get('target', 'Unknown')} ({scan.get('scan_type', 'unknown')})", styles['Normal']))
+    story.append(Spacer(1, 20))
+    
+    # Detailed Findings
+    story.append(Paragraph("Vulnerability Details", styles['Heading2Custom']))
+    
+    all_vulns = []
+    for scan in scans:
+        results = scan.get("results", {})
+        for vuln in results.get("vulnerabilities", [])[:20]:  # Limit per scan
+            all_vulns.append({
+                "target": scan.get("target", "Unknown"),
+                "id": vuln.get("id", "Unknown"),
+                "severity": vuln.get("severity", "unknown").upper(),
+                "description": vuln.get("description", "No description")[:100],
+                "cvss": vuln.get("cvss", "N/A")
+            })
+    
+    if all_vulns:
+        vuln_data = [["Target", "CVE/ID", "Severity", "CVSS"]]
+        for v in all_vulns[:30]:  # Limit total
+            vuln_data.append([
+                v["target"][:20],
+                v["id"][:20],
+                v["severity"],
+                str(v["cvss"])
+            ])
+        
+        vuln_table = Table(vuln_data, colWidths=[120, 120, 80, 60])
+        vuln_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#0f172a'), colors.HexColor('#1e293b')]),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.white),
+        ]))
+        story.append(vuln_table)
+    else:
+        story.append(Paragraph("No vulnerabilities found in the selected scans.", styles['Normal']))
+    
+    story.append(Spacer(1, 30))
+    
+    # Footer
+    story.append(Paragraph("---", styles['Normal']))
+    story.append(Paragraph("Report generated by PentestAI Platform", styles['BodySmall']))
+    story.append(Paragraph(f"Report ID: {report_data.get('id', 'N/A')}", styles['BodySmall']))
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+@api_router.get("/reports/{report_id}/pdf")
+async def download_report_pdf(report_id: str, current_user: dict = Depends(get_current_user)):
+    """Download a report as PDF"""
+    report = await db.reports.find_one(
+        {"id": report_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    # Fetch actual scan data for the report
+    scan_ids = report.get("scans", [])
+    scans = await db.scans.find(
+        {"id": {"$in": scan_ids}},
+        {"_id": 0}
+    ).to_list(len(scan_ids))
+    
+    # Create enriched report data
+    report_data = {
+        **report,
+        "scans": scans
+    }
+    
+    pdf_buffer = generate_pdf_report(report_data)
+    
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=security_report_{report_id[:8]}.pdf"
+        }
+    )
+
 # ==================== ROOT ENDPOINT ====================
 
 @api_router.get("/")
@@ -1022,6 +1366,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Start the scheduler on app startup"""
+    scheduler.add_job(
+        check_scheduled_scans,
+        IntervalTrigger(minutes=1),
+        id="scheduled_scan_checker",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info("Scheduler started - checking for due scans every minute")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    scheduler.shutdown()
     client.close()

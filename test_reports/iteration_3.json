@@ -1,0 +1,41 @@
+{
+  "summary": "Tested 4 advanced features: APScheduler, PDF Export, Concurrent Bulk Scanning, WebSocket Progress. Backend: 4/4 pytest cases pass. Frontend: PDF download works end-to-end (verified 2649-byte valid PDF via UI). WebSocket connects and receives progress events. However, the 'Live' badge on Bulk Scan page never appears due to a stale-closure bug in the frontend WebSocket handler.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/reports/{id}/pdf", "issue": "Historical AttributeError in backend logs ('str' object has no attribute .get) from an earlier version passing scan_ids strings to generate_pdf_report. Current code fetches scan docs and passes them; no longer reproducible, but logs remain."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "BulkScanPage (App.js ~L1345)", "issue": "'Live' badge never renders during a running bulk scan. Stale-closure bug: connectWebSocket is a useCallback with deps [selectedBulkScan]; it is invoked immediately after setSelectedBulkScan(newScan), so the captured closure still references the OLD selectedBulkScan (null). Consequently the `if (selectedBulkScan?.id === scanId)` branch in ws.onmessage never runs on 'started'/'progress' events, so selectedBulkScan.status is never updated to 'running'. The badge condition `wsConnected && selectedBulkScan?.status === 'running'` therefore stays false. Meanwhile setBulkScans updates work, so the history list updates, and the completion toast fires (because fetchBulkScans refetches on 'completed').", "selector": "text=Live", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_advanced_features.py",
+    "/app/test_reports/pytest/advanced_features.xml"
+  ],
+  "action_items": [
+    "Fix stale-closure in BulkScanPage.connectWebSocket: either (a) pass scanId + newScan directly and use a ref (selectedBulkScanRef) inside ws.onmessage to read the latest selectedBulkScan, (b) remove `selectedBulkScan` from the deps and always update selectedBulkScan by checking the ref, or (c) unconditionally update selectedBulkScan when its id equals scanId by using a functional setState that reads prev (already partially done - just remove the outer `if (selectedBulkScan?.id === scanId)` guard, since setSelectedBulkScan(prev => prev?.id===scanId ? {...} : prev) is safe).",
+    "Optional: clean up stale AttributeError from backend logs by verifying no callers still pass raw scan_ids into generate_pdf_report."
+  ],
+  "critical_code_review_comments": [
+    "App.js is now 1957 lines - splitting into per-page components is overdue.",
+    "connectWebSocket useCallback has a subtle stale closure problem when used together with setState calls made in the same tick. Prefer a ref to selectedBulkScan (const selectedRef = useRef(); useEffect(()=>{selectedRef.current=selectedBulkScan}, [selectedBulkScan])) and use selectedRef.current inside ws.onmessage.",
+    "run_bulk_scan_job: good use of asyncio.Semaphore(5). Consider making concurrency configurable via env var.",
+    "check_scheduled_scans uses ISO string comparison for next_run <= now.isoformat() - works because ISO 8601 UTC strings compare lexicographically, but a Datetime type in Mongo would be safer.",
+    "generate_pdf_report has no exception handling; a malformed scans entry would 500 the endpoint. Wrap in try/except and return 500 with a friendly message."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_advanced_features.py (new)"
+  ],
+  "success_rate": {"backend": "100% (4/4)", "frontend": "80% (PDF works, WebSocket delivers events, but Live badge UI bug)"},
+  "test_credentials": "tester@example.com / test123456",
+  "seed_data_creation": "Created ~2 bulk scans (5 & 10 targets), 1 recon scan on example.com, 1 report during PDF test. Not cleaned up.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests at /app/backend/tests/test_advanced_features.py verify all four features. Set REACT_APP_BACKEND_URL env var when running pytest. The only remaining bug is a frontend stale-closure preventing the Live badge; the underlying WebSocket protocol works fine (proven with a websockets client that receives started/progress/completed events).",
+  "rca of the issue": "Live badge bug RCA: In startBulkScan, `setSelectedBulkScan(newScan)` is queued and `connectWebSocket(id)` is called synchronously right after. `connectWebSocket` is a useCallback with dependency [selectedBulkScan] - so its closure captures whatever selectedBulkScan was at render time (typically null when starting the first bulk scan). Inside ws.onmessage the code does `if (selectedBulkScan?.id === scanId) setSelectedBulkScan(prev => ...)` - the outer guard uses the stale captured value, so it evaluates to `null?.id === scanId` = false, and the setSelectedBulkScan updater is never invoked. Fix: remove the outer if-guard and rely on the functional updater's own equality check via prev, OR use a ref to always read the current selectedBulkScan."
+}
