@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="9" time="19.524" timestamp="2026-05-06T03:38:06.064611+00:00" hostname="agent-env-5836a784-6316-4ad5-8886-38c4a5e6cecd"><testcase classname="backend.tests.test_v14_features" name="test_root_returns_v14" time="0.253" /><testcase classname="backend.tests.test_v14_features" name="test_presets_endpoint_requires_auth" time="0.161" /><testcase classname="backend.tests.test_v14_features" name="test_presets_endpoint_structure" time="0.545" /><testcase classname="backend.tests.test_v14_features" name="test_scan_no_preset_defaults_to_fast" time="2.468" /><testcase classname="backend.tests.test_v14_features" name="test_scan_preset_fast_recon_scanme" time="2.495" /><testcase classname="backend.tests.test_v14_features" name="test_scan_preset_thorough_recon_accepted" time="2.420" /><testcase classname="backend.tests.test_v14_features" name="test_ai_summary_has_model_and_generated_at" time="7.801" /><testcase classname="backend.tests.test_v14_features" name="test_nvd_service_enrich_and_cache" time="2.698"><failure message="RuntimeError: Event loop is closed">backend/tests/test_v14_features.py:175: in test_nvd_service_enrich_and_cache
+    findings2 = asyncio.run(nvd_service.enrich_ports(ports))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+backend/services/nvd_service.py:51: in enrich_ports
+    cves = await _lookup_cves(kw)
+           ^^^^^^^^^^^^^^^^^^^^^^
+backend/services/nvd_service.py:67: in _lookup_cves
+    cached = await db.cve_cache.find_one({"keyword": keyword.lower()}, {"_id": 0})
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/root/.venv/lib/python3.11/site-packages/motor/metaprogramming.py:74: in method
+    return framework.run_on_executor(
+/root/.venv/lib/python3.11/site-packages/motor/frameworks/asyncio/__init__.py:85: in run_on_executor
+    return loop.run_in_executor(_EXECUTOR, functools.partial(fn, *args, **kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.11/asyncio/base_events.py:817: in run_in_executor
+    self._check_closed()
+/usr/local/lib/python3.11/asyncio/base_events.py:520: in _check_closed
+    raise RuntimeError('Event loop is closed')
+E   RuntimeError: Event loop is closed</failure></testcase><testcase classname="backend.tests.test_v14_features" name="test_backend_healthy_after_lifespan_migration" time="0.504" /></testsuite></testsuites>

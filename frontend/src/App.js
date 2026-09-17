@@ -734,6 +734,8 @@ function AppRoutes() {
             <Route path="/assistant" element={<ProtectedRoute><MainLayout><AssistantPage /></MainLayout></ProtectedRoute>} />
             <Route path="/terminal" element={<ProtectedRoute><MainLayout><TerminalPage /></MainLayout></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><MainLayout><ReportsPage /></MainLayout></ProtectedRoute>} />
+            <Route path="/toolkits" element={<ProtectedRoute><MainLayout><ToolkitsPage /></MainLayout></ProtectedRoute>} />
+            <Route path="/scheduler" element={<ProtectedRoute><MainLayout><SchedulerPage /></MainLayout></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><MainLayout><SettingsPage /></MainLayout></ProtectedRoute>} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -752,5 +754,3 @@ function App() {
         </BrowserRouter>
     );
 }
-
-export default App;

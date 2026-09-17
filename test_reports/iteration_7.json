@@ -1,0 +1,26 @@
+{
+  "summary": "v1.7 raw nmap XML download feature fully verified. Backend: 11/11 pytest tests pass (endpoint returns 200 + application/xml + Content-Disposition attachment with .xml filename + <?xml body; unknown scan → 404; missing auth → 401/403; cross-user scan → 404; recon/vuln/network all produce results.nmap_xml). Frontend: download-nmap-xml-button appears in Recon, Vulnerabilities, and Network pages after completed 127.0.0.1 fast scan; clicking triggers browser download with filename pentestai-127.0.0.1.xml on all three pages. Button correctly hidden when no scan is selected (verified on fresh user with empty scan history). Regressions: /api/auth/register, /api/auth/login, /api/dashboard/stats, /api/scans, /api/scans/{id}/sarif all pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_v17_nmap_xml.py",
+    "/app/test_reports/pytest/v17_nmap_xml.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "downloadNmapXml() in all 3 pages is identical (~15 lines) — DRY violation. Extract into a shared hook or util in /app/frontend/src/lib/ (e.g. downloadBlobFile). Low priority.",
+    "Content-Disposition filename in backend is `pentestai-scan-{scan_id}.xml`, but frontend saves as `pentestai-{target}.xml` — inconsistent naming. Consider honoring server filename via content-disposition parsing, or align both to include scan_id for traceability.",
+    "downloadNmapXml() does not validate response content-type before creating the blob (same class of concern already flagged for LaunchDistroButton in iteration_6). If backend returns JSON error via a different error path, the blob would be saved as .xml with JSON content. Guard with res.headers['content-type']?.includes('application/xml').",
+    "results.nmap_xml is stored inline inside the scan document in MongoDB — for large network sweeps this can bloat the doc past 16MB BSON limit. Consider GridFS or S3 offload for scans with >1000 hosts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v17_nmap_xml.py (created — 11 tests covering XML endpoint + auth + cross-user + regression)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% (3/3 pages verified with real download interception)"},
+  "test_credentials": "Dynamic POST /api/auth/register (v17_<ts>_<hex>@test.com / password123 for pytest; v17ui_*, v17b_*, v17c_* for playwright)",
+  "seed_data_creation": "Per-run: fresh users + recon/vuln/network fast scans against 127.0.0.1 (each ~2–14s)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.7 complete. Seven v1.x pytest files now in /app/backend/tests/. Run: `set -a && source /app/frontend/.env && set +a && pytest /app/backend/tests/test_v17_nmap_xml.py -v`. Frontend token is stored under BOTH `access_token` and `token` localStorage keys — safe to set both when injecting auth in Playwright. Backend endpoint GET /api/scans/{id}/nmap-xml serves the raw xml stored inline at scan.results.nmap_xml — the filename in Content-Disposition uses scan_id, whereas the frontend downloads name the file by target.",
+  "rca of the issue": "N/A — feature works end-to-end as spec'd. Only advisory review comments logged for main agent."
+}

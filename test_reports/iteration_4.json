@@ -1,0 +1,44 @@
+{
+  "summary": "PentestAI v1.4 distros feature + regression verified. Backend: 17/17 new distros tests pass (test_v14_distros.py) — list shape, per-id GET with 4 ids, 404 unknown, recommend for recon/vuln/network/forensics/incident_response with correct ORDER, unknown returns empty primary, scan results include recommended_distros, AI chat mentions DEFT for forensics, vuln preset fast vs thorough nmap_args differ (top-20 vs top-200). Root version=1.4.0 confirmed. Frontend: /toolkits renders all 4 distro cards (distro-deft/backbox/kodachi/pentoo) with nav-toolkits sidebar entry; Recon results show DistroRecommendation card with distro-recommend-kodachi/backbox links (kodachi first, matching primary-list order); Vulnerabilities results show DistroRecommendation with distro-recommend-backbox/pentoo. Fixed 1 backend bug.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "services/distros.recommend_for", "issue": "FIXED in this iteration — was iterating DISTROS list (deft,backbox,kodachi,pentoo) which broke ordering; recon returned [backbox,kodachi] instead of [kodachi,backbox]. Now uses dict lookup to preserve RECOMMENDATIONS primary-list order."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v14_distros.py",
+    "/app/test_reports/pytest/v14_distros.xml",
+    "/app/test_reports/pytest/all_v14_final.xml"
+  ],
+  "action_items": [
+    "ENV-ONLY (not v1.4 regression): nmap binary missing in this preview container — 3 legacy tests (test_network_scan_real_engine, test_recon_scan_still_uses_nmap, test_scan_preset_fast_recon_scanme) and 1 v1.3 test (TestCancel.test_cancel_running_scan, scan finishes too fast in mock mode) fail because scan_engine falls back to 'mock'. Context note claimed nmap at /usr/bin/nmap but `which nmap` returns nothing in this container. Confirm with main agent whether this is a container drift issue or these tests need the nmap binary installed at supervisor level."
+  ],
+  "critical_code_review_comments": [
+    "services/distros.recommend_for ORIGINALLY discarded order from RECOMMENDATIONS[*]['primary'] — rationale clearly implied an order ('Kodachi for OPSEC; BackBox for routine') but the list comp `[d for d in DISTROS if d['id'] in rec['primary']]` reordered by DISTROS index. FIXED in this iteration via dict lookup. Recommend a unit test guarding this in future.",
+    "routers/distros.py exposes /distros/{distro_id} after /distros/recommend/{scan_type} — FastAPI route ordering means /distros/recommend/foo is matched first (good), but if someone adds a distro literally named 'recommend' the route would collide. Acceptable for now.",
+    "ToolkitsPage.js does no auth-required handling — if /api/distros 401s, page silently shows no cards (catch(()=>{})). Consider showing an error state.",
+    "DistroRecommendation.js trusts d.focus.split('&')[0] for the badge — works for current 4 but assumes a specific focus-string shape. Minor.",
+    "SYSTEM_PROMPT in chat.py concatenates distros_service.assistant_system_addendum() at module import time — fine, but if DISTROS list is dynamically edited later, the prompt won't refresh until the worker restarts. Acceptable for static catalogue.",
+    "vuln_service.py:41 still has a hardcoded default fallback for nmap_args (`-sT -sV -T4 --top-ports 100 -Pn --script vuln --host-timeout 90s`) — this default is used only when options['nmap_args'] is missing. Fine but worth a comment that presets are now the canonical source."
+  ],
+  "updated_files": [
+    "/app/backend/services/distros.py (FIXED recommend_for order-preservation bug)",
+    "/app/backend/tests/test_v14_distros.py (created — 17 tests covering distros catalogue, recommendations, scan integration, AI chat addendum, vuln preset nmap_args)"
+  ],
+  "success_rate": {
+    "backend": "100% on v1.4 distros (17/17). 61/65 overall — 4 failures all caused by missing nmap binary in container, NOT v1.4 regressions.",
+    "frontend": "100% — Toolkits page, Recon DistroRecommendation, Vulnerabilities DistroRecommendation all verified end-to-end via Playwright."
+  },
+  "test_credentials": "Dynamic POST /api/auth/register (v14d_<ts>_<hex>@test.com / password123 + uitest_<ts>@test.com / password123).",
+  "seed_data_creation": "Each pytest run registers 1 fresh user + creates 1 recon scan to verify recommended_distros field. Frontend test registers 1 user, creates 1 recon + 1 vuln scan. All TEST-prefixed; no production data touched. cve_cache 'openssh 7.4' doc cleared/repopulated by NVD test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.4 distros feature is complete and green. Four pytest files exist now: backend_test.py (legacy), test_scans_v12.py (v1.2), test_v13_features.py (v1.3), test_v14_features.py (v1.4 presets+NVD+lifespan+summary metadata), test_v14_distros.py (this turn — distros endpoints + chat addendum + scan integration + preset-diff). Run with: `set -a && source /app/frontend/.env && source /app/backend/.env && set +a && pytest /app/backend/tests/ -v` — env loading is required because tests read REACT_APP_BACKEND_URL at module import. Expect 61/65 in current container (4 nmap-binary-missing failures are env-not-code). If nmap is reinstalled, expect 65/65. The recommend_for ORDER fix means recommendation order is now meaningful — keep an eye on it. Frontend: ToolkitsPage, DistroRecommendation, and Sidebar Toolkits entry all data-testid'd as documented.",
+  "rca of the issue": "BUG: services/distros.recommend_for returned distros in DISTROS-list order, not in RECOMMENDATIONS['primary'] order. ROOT CAUSE: `[d for d in DISTROS if d['id'] in rec['primary']]` iterates the *catalogue* and filters — so order follows the catalogue, not the recommendation. REPRO: `GET /api/distros/recommend/recon` returned `[backbox, kodachi]` instead of required `[kodachi, backbox]`. MITIGATION: replaced with `by_id = {d['id']: d for d in DISTROS}; [by_id[did] for did in rec['primary'] if did in by_id]` which preserves the curated order from RECOMMENDATIONS. Confirmed by re-running test_distros_recommend[recon/network] + test_completed_scan_has_recommended_distros — all green. UI screenshot confirmed Kodachi pill renders before BackBox on the recon results page."
+}

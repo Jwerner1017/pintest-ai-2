@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="14" failures="3" skipped="0" tests="26" time="64.061" timestamp="2026-06-13T03:20:55.038000+00:00" hostname="agent-env-5836a784-6316-4ad5-8886-38c4a5e6cecd"><testcase classname="backend.tests.test_v14_distros" name="test_root_version_is_1_4" time="10.114"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_requires_auth" time="10.089"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_list_shape" time="15.092"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_get_by_id[deft]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_get_by_id[backbox]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_get_by_id[kodachi]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_get_by_id[pentoo]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_get_unknown_404" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend[recon-expected0]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend[vuln-expected1]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend[network-expected2]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend[forensics-expected3]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend[incident_response-expected4]" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_distros_recommend_unknown" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_completed_scan_has_recommended_distros" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_chat_mentions_deft_for_forensics" time="0.000"><error message="failed on setup with &quot;requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)&quot;">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=15)</error></testcase><testcase classname="backend.tests.test_v14_distros" name="test_vuln_preset_nmap_args_differ" time="0.001" /><testcase classname="backend.tests.test_v14_features" name="test_root_returns_v14" time="10.138"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)">E   TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='darkpulse-2.preview.emergentagent.com', port=443): Read timed out. (read timeout=10)</failure></testcase><testcase classname="backend.tests.test_v14_features" name="test_presets_endpoint_requires_auth" time="1.412" /><testcase classname="backend.tests.test_v14_features" name="test_presets_endpoint_structure" time="0.594" /><testcase classname="backend.tests.test_v14_features" name="test_scan_no_preset_defaults_to_fast" time="2.321" /><testcase classname="backend.tests.test_v14_features" name="test_scan_preset_fast_recon_scanme" time="2.343" /><testcase classname="backend.tests.test_v14_features" name="test_scan_preset_thorough_recon_accepted" time="2.305" /><testcase classname="backend.tests.test_v14_features" name="test_ai_summary_has_model_and_generated_at" time="8.801" /><testcase classname="backend.tests.test_v14_features" name="test_nvd_service_enrich_and_cache" time="0.200" /><testcase classname="backend.tests.test_v14_features" name="test_backend_healthy_after_lifespan_migration" time="0.433" /></testsuite></testsuites>

@@ -1,0 +1,26 @@
+{
+  "summary": "v1.8 scheduler feature: full CRUD + validation + end-to-end dispatch tested via pytest (12/12 passing including 90s live dispatch), plus UI flow via Playwright — sidebar nav, create schedule with cron template, toggle pause/resume, delete. Regressions on prior v16/v17 test suites: 21/22 passing (only failure is v16 stale version assertion 1.5.0 vs 1.8.0 — pre-existing, unrelated).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_v18_scheduler.py",
+    "/app/test_reports/pytest/v18_results.xml"
+  ],
+  "action_items": [
+    "Optional: update /app/backend/tests/test_v16_launch.py::test_root_version stale assertion (expects 1.5.0, backend now returns 1.8.0) — cosmetic housekeeping only."
+  ],
+  "critical_code_review_comments": [
+    "routers/schedules.py PATCH: when caller updates only 'cron' but the schedule is disabled, next_run_at is correctly forced to null (good). When re-enabling without a cron change, next_run_at is set — correct.",
+    "services/scheduler.py: 20s tick is fine for minute-level cron; sub-minute schedules would be missed but that's out of scope (min cron granularity is 1 min).",
+    "scheduler _tick fallback on exception disables the schedule — good hot-loop guard.",
+    "SchedulerPage delete has no confirmation dialog; consider a confirm for destructive action."
+  ],
+  "updated_files": ["/app/backend/tests/test_v18_scheduler.py"],
+  "success_rate": { "backend": "100% (12/12 new, 21/22 regression)", "frontend": "100%" },
+  "test_credentials": "Dynamic register per test (email/password/username).",
+  "seed_data_creation": "None (tests self-clean by delete or use unique users).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.8 adds POST/GET/PATCH/DELETE /api/schedules + background scheduler loop (tick=20s) that fires enqueue_scheduled_scan and stamps last_run_at + last_scan_id. Dispatch end-to-end verified with cron '* * * * *' within ~60-90s. Frontend Scheduler page at /scheduler with data-testids: nav-scheduler, scheduler-page, schedule-name-input, schedule-target-input, schedule-cron-input, cron-template-0..4, create-schedule-button, schedule-item-{id}, schedule-toggle-{id}, schedule-delete-{id}, schedule-count.",
+  "rca of the issue": "N/A — no defects found."
+}

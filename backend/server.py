@@ -31,10 +31,9 @@ from reportlab.lib.units import inch
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+from core.db import client  # noqa: E402  (after env is loaded)
+from routers import auth, scans, reports, chat, dashboard, distros, schedules  # noqa: E402
+from services import scheduler as scheduler_service  # noqa: E402
 
 # JWT Configuration
 jwt_secret = os.environ.get('JWT_SECRET')
@@ -173,9 +172,8 @@ class UserCreate(BaseModel):
     username: str
     role: str = "tester"
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
+def _ensure_nmap_installed():
+    """Self-heal: install nmap on startup if it's missing.
 
 class UserResponse(BaseModel):
     id: str
@@ -277,52 +275,10 @@ def create_token(user_id: str, email: str, role: str) -> str:
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        token = credentials.credentials
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        
-        user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
-        return user
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-# ==================== AUTH ENDPOINTS ====================
-
-@api_router.post("/auth/register", response_model=TokenResponse)
-async def register(user_data: UserCreate):
-    # Check if user exists
-    existing = await db.users.find_one({"email": user_data.email})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    user_id = str(uuid.uuid4())
-    user_doc = {
-        "id": user_id,
-        "email": user_data.email,
-        "username": user_data.username,
-        "password": hash_password(user_data.password),
-        "role": user_data.role,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    await db.users.insert_one(user_doc)
-    
-    token = create_token(user_id, user_data.email, user_data.role)
-    
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(
-            id=user_id,
-            email=user_data.email,
-            username=user_data.username,
-            role=user_data.role,
-            created_at=user_doc["created_at"]
+        env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
+        subprocess.run(
+            ["apt-get", "install", "-y", "--no-install-recommends", "nmap"],
+            check=True, capture_output=True, timeout=120, env=env,
         )
     )
 
@@ -1467,13 +1423,12 @@ async def download_report_pdf(report_id: str, current_user: dict = Depends(get_c
         }
     )
 
-# ==================== ROOT ENDPOINT ====================
 
 @api_router.get("/")
 async def root():
-    return {"message": "PentestAI Platform API", "version": "1.0.0"}
+    return {"message": "PentestAI Platform API", "version": "2.0.0"}
 
-# Include the router in the main app
+
 app.include_router(api_router)
 
 app.add_middleware(

@@ -86,7 +86,12 @@ AI-enhanced penetration testing platform with Claude Sonnet 4.5, Shodan OSINT, b
 ### Reports
 - GET /api/reports/{id}/pdf - Download PDF report
 
-## Prioritized Backlog
+## Implementation History
+- **v1.0** JWT auth, AI chat, mocked scans, dashboard, reports
+- **v1.1** Modular React refactor, real Nmap, Shodan, PDF, TOTP MFA
+- **v1.2** Real vuln + network scans, async polling
+- **v1.3** Server split into routers, AI summariser, cancellation + orphan janitor
+- **v1.4** NVD CVE enrichment, scan presets, lifespan, AI summary metadata, DEFT/BackBox/Kodachi/Pentoo distros
 
 ### P0 (Next)
 - Further frontend modularization (extract all pages)

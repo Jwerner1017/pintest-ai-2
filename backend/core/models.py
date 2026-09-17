@@ -1,0 +1,132 @@
+"""Pydantic request/response models shared across routers."""
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    username: str
+    role: str = "tester"
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    username: str
+    role: str
+    created_at: str
+
+
+class TokenResponse(BaseModel):
+    access_token: Optional[str] = None
+    token_type: str = "bearer"
+    user: Optional[UserResponse] = None
+    mfa_required: bool = False
+    mfa_token: Optional[str] = None
+
+
+class MFALogin(BaseModel):
+    mfa_token: str
+    code: str
+
+
+class MFAVerify(BaseModel):
+    code: str
+
+
+class ChatMessage(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+class ChatResponse(BaseModel):
+    response: str
+    session_id: str
+
+
+class ScanCreate(BaseModel):
+    scan_type: str
+    target: str
+    options: Optional[dict] = {}
+
+
+class ScanResponse(BaseModel):
+    id: str
+    scan_type: str
+    target: str
+    status: str
+    created_at: str
+    progress: int = 0
+    stage: Optional[str] = None
+    results: Optional[dict] = None
+
+
+class RemediationStep(BaseModel):
+    title: str
+    action: str
+    details: str
+    commands: List[str] = Field(default_factory=list)
+
+
+class RemediationPlan(BaseModel):
+    summary: str
+    priority: str
+    steps: List[RemediationStep]
+    validation: List[str] = Field(default_factory=list)
+    rollback: List[str] = Field(default_factory=list)
+
+
+class RemediationResponse(BaseModel):
+    finding_index: int
+    finding_id: str
+    remediation: RemediationPlan
+    model: str
+    generated_at: str
+    cached: bool
+
+
+class DashboardStats(BaseModel):
+    total_scans: int
+    active_scans: int
+    vulnerabilities_found: int
+    critical_alerts: int
+    recent_activity: List[dict]
+
+
+class ShodanRequest(BaseModel):
+    target: str
+
+
+class ScheduleCreate(BaseModel):
+    name: str
+    scan_type: str  # recon | vuln | network
+    target: str
+    cron: str  # 5-field cron expression, e.g. "0 * * * *"
+    preset: Optional[str] = "fast"
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    cron: Optional[str] = None
+    name: Optional[str] = None
+
+
+class ScheduleResponse(BaseModel):
+    id: str
+    name: str
+    scan_type: str
+    target: str
+    cron: str
+    preset: str
+    enabled: bool
+    next_run_at: Optional[str] = None
+    last_run_at: Optional[str] = None
+    last_scan_id: Optional[str] = None
+    created_at: str
