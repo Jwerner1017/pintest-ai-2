@@ -1,37 +1,50 @@
 {
-  "summary": "Comprehensive testing of PentestAI v1.1: 20/20 backend pytest tests pass + frontend critical flows verified end-to-end (modular routing, MFA enable/login/disable, Shodan unconfigured card, Recon nmap scan via UI, Reports PDF download). Real nmap engine confirmed (scan_engine='nmap'). nmap binary was missing at test start; testing agent installed it via apt-get and restarted backend.",
+  "summary": "Comprehensive backend + frontend testing of PentestAI Platform. Backend: 19/19 pytest tests passed covering auth (register/login/me/duplicate/invalid), real recon scan on google.com (verified live IP resolution, DNS records, WHOIS, port scan, vulnerability analysis), vuln scan, network scan, list/get/delete scans, dashboard stats, vulnerability trends, report generation, AI chat via Emergent LLM (Claude Sonnet 4.5) and chat history. Frontend: Playwright end-to-end flow succeeded — login -> dashboard -> recon (google.com returned real IP 64.233.179.113, 20 ports, Linux/Unix OS detection, 29 DNS records) -> vuln page (real PENTEST vulns) -> AI assistant (got response) -> terminal (`ai <query>` returned formatted Claude answer) -> reports -> dashboard stats. All primary features work end-to-end with real network data.",
   "backend_issues": {
     "critical": [],
-    "minor": []
+    "minor": [
+      {"endpoint": "/api/reports/generate", "issue": "Request body is a bare List[str] rather than a wrapped object (e.g. {scan_ids: [...]}) — works but is unusual and less friendly to API consumers/docs."},
+      {"endpoint": "/api/scans (network type)", "issue": "Returns static/simulated zeros for traffic — expected per PRD (documented as mocked), but no `mocked: true` flag returned so clients can't tell."},
+      {"endpoint": "/api/dashboard/stats", "issue": "active_scans is hardcoded to 0 (no async scan job model)."},
+      {"endpoint": "/api/dashboard/vulnerability-trends", "issue": "Returns hardcoded static trend data; not derived from real scans."}
+    ]
   },
   "frontend_issues": {
-    "ui_bugs": [],
+    "ui_bugs": [
+      {"component": "ReportsPage", "issue": "Scan list is fetched once on mount; if user navigates in immediately after creating scans in another page, list can appear empty until manual refresh (no refetch on focus). Low priority.", "selector": "[data-testid=\"scans-selection\"]", "priority": "LOW"}
+    ],
     "integration_issues": [],
-    "design_issues": []
+    "design_issues": [
+      {"screen": "Recon results", "issues": ["Port numbers rendered in red for filtered/closed-like states can be misread as 'danger' even when port is just filtered."]}
+    ]
   },
   "test_report_links": [
     "/app/backend/tests/backend_test.py",
     "/app/test_reports/pytest/pytest_results.xml"
   ],
   "action_items": [
-    "Optional: persist nmap installation in backend Dockerfile/setup so 'apt-get install nmap' is not required on each fresh container (currently the binary was absent at boot; testing agent installed it). Without nmap, recon falls back to mock engine but does not crash."
+    "Consider wrapping /api/reports/generate body as {\"scan_ids\": [...]} for API clarity.",
+    "Make dashboard active_scans and vulnerability-trends dynamic (derived from real scan data) instead of static values.",
+    "Add a `mocked: true` flag to network scan results so UI can indicate it's simulated.",
+    "Reports page should re-fetch scans on route entry (useEffect on location) or via React Query to avoid stale empty list.",
+    "The unused generate_mock_scan_results() function in server.py should be removed (dead code, ~70 lines)."
   ],
   "critical_code_review_comments": [
-    "server.py is ~660 lines — consider splitting auth/MFA/scans/reports/chat into routers for maintainability (>700 line threshold close).",
-    "ReconPage uses inline className `bg-${vuln.severity === 'critical' ? 'red' : ...}-500/20` — Tailwind cannot detect dynamic class names at build time, so these badges may not render colors in production builds. Use a static map.",
-    "Frontend has a circular auth assumption: axios default headers Authorization is presumably set in AuthContext on mount. Verify pages refreshed directly (e.g. /reports) properly attach the token before first request.",
-    "report_service uses datetime.utcnow() (deprecated in Python 3.12+); switch to datetime.now(timezone.utc).",
-    "JWT_SECRET fallback ('pentestai-secret-key-change-in-production') is used if env missing — should fail-fast in production rather than silently use a weak default."
+    "server.py contains ~70 lines of dead code (generate_mock_scan_results) that should be removed now that real scanner exists.",
+    "JWT_SECRET has an insecure fallback default in code; should raise if not provided in env.",
+    "Scan endpoint runs port scan synchronously in request path; long-running scans (many ports/hosts) will time out ingress. Consider background job + polling.",
+    "No rate limiting on /api/scans — abusive users could DoS third parties. Add per-user rate limits and target-allowlist for the hosted preview.",
+    "No pagination on /api/scans, /api/reports, /api/chat/history (hardcoded to_list(50/100)).",
+    "App.js is 1177 lines — should be split into per-page components for maintainability.",
+    "scanner.py catches bare `Exception` in DNS loop (line 121); OK for resilience but hides real errors — log at debug at least."
   ],
   "updated_files": [
-    "/app/backend/tests/backend_test.py (created)",
-    "/app/backend/tests/__init__.py (created)"
+    "/app/backend/tests/backend_test.py (new)"
   ],
   "success_rate": {"backend": "100%", "frontend": "100%"},
-  "test_credentials": "Dynamic registration via /api/auth/register; tests create unique emails like agent_<ts>@test.com / password123.",
-  "seed_data_creation": "Each backend test run registers one fresh user and creates 1-2 scans + 1 report. No cleanup performed but data is isolated per user.",
+  "test_credentials": "tester@example.com / test123456 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test user auto-registered on first run; test scans/reports created during tests and cleaned up by TestZCleanup class.",
   "retest_needed": false,
-  "should_main_agent_self_test": false,
-  "context_for_next_testing_agent": "All v1.1 features verified working: nmap recon (real engine), Shodan unconfigured graceful path, PDF generation with reportlab, TOTP MFA full lifecycle, modular React routing. nmap binary must be present at /usr/bin/nmap for scan_engine='nmap' (was missing on container boot, installed via apt-get install nmap during testing — needs to be added to base image/setup). pyotp is in /root/.venv. SHODAN_API_KEY intentionally not configured. All tests in /app/backend/tests/backend_test.py (pytest, 20 tests).",
-  "rca of the issue": "No outstanding issues. Initial environment had nmap missing; resolved by installing nmap binary and restarting backend so shutil.which('nmap') re-evaluates at module import."
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite at /app/backend/tests/backend_test.py works end-to-end against the real preview URL. Real scanner returns live data for google.com in ~5-20s. AI chat responds in ~5-15s. All /api endpoints require JWT except /api/auth/*. Fixtures auto-register the tester account if not present."
 }

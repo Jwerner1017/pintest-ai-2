@@ -1,31 +1,90 @@
 # PentestAI Platform - Product Requirements Document
 
 ## Overview
-AI-enhanced penetration testing platform synthesizing best elements from leading cybersecurity tools with Claude Sonnet 4.5 for intelligent assistance. Surfaces purpose-built security Linux distributions (DEFT, BackBox, Kodachi, Pentoo) contextually. Exports findings as PDF, SARIF 2.1 (CI/CD), and AI executive summaries.
+AI-enhanced penetration testing platform with Claude Sonnet 4.5, Shodan OSINT, bulk scanning, scheduling, PDF reports, real-time WebSocket progress, and modular architecture.
 
-## User Personas
-1. **Security Professional** — Full-time pentester needing efficient workflow
-2. **Ethical Hacker** — Bug bounty hunter requiring quick reconnaissance
-3. **Security Student** — Learning cybersecurity concepts with AI guidance
-4. **IT Administrator** — Running security assessments on company infrastructure
-5. **DFIR Responder** — Incident response and forensics specialist
-6. **DevSecOps Engineer** — Pipes scan results into CI/CD via SARIF
+## What's Been Implemented
 
-## Core Requirements
-- JWT-based authentication with role-based access + TOTP MFA
-- Dark theme default (light mode available)
-- Hybrid UI: Visual dashboard + CLI terminal
-- AI assistant powered by Claude Sonnet 4.5
-- Modular architecture (routers + services + core)
-- Async scan execution with real-time progress + cancellation
-- Configurable scan presets (fast / thorough / stealth)
-- NVD CVE enrichment for service-version detections
-- AI-generated executive summaries (with model + timestamp audit)
-- Claude-generated, finding-specific DevOps remediation plans with cached audit metadata
-- Terminal Tab completion for commands, scan ID prefixes, and scan presets
-- Specialised toolkit recommendations (DEFT/BackBox/Kodachi/Pentoo)
-- SARIF 2.1 export for CI/CD pipeline integration
-- Self-healing container (auto-installs nmap on startup if missing)
+### v1.0-1.4 (Earlier)
+- JWT authentication, dark theme
+- Real network scanning (DNS, WHOIS, Ports)
+- Shodan OSINT, CVE Details from NVD
+- Bulk scanning with CIDR support
+- Scheduled scans with auto-execute
+- PDF report generation
+- WebSocket real-time progress
+- Concurrent scanning (5 parallel)
+
+### v1.5 - Modular Frontend & Export (Sep 2026)
+- **Frontend Modularization**:
+  - `src/context/AuthContext.jsx` - Authentication context
+  - `src/components/layout/` - Sidebar, Header, MainLayout
+  - `src/pages/` - LoginPage, RegisterPage
+  - `src/lib/api.js` - API configuration
+  - Reduced App.js from 119KB to 62KB (48% smaller)
+  
+- **CSV/JSON Export**:
+  - Export any scan to CSV or JSON format
+  - Includes ports, DNS records, vulnerabilities, Shodan data
+  - Download buttons on Recon results page
+  - Endpoint: GET /api/scans/{id}/export?format=csv|json
+
+## Features Summary
+
+### Backend (FastAPI + MongoDB)
+- ✅ JWT Authentication
+- ✅ AI Chat (Claude Sonnet 4.5)
+- ✅ Real Reconnaissance (DNS, WHOIS, Ports)
+- ✅ Shodan OSINT Integration
+- ✅ Bulk Scanning with CIDR + Concurrent execution
+- ✅ Scheduled Scans with Auto-Execute (APScheduler)
+- ✅ CVE Details from NVD with caching
+- ✅ PDF Report Generation (reportlab)
+- ✅ CSV/JSON Export
+- ✅ WebSocket for real-time progress
+
+### Frontend (React + Tailwind + ShadcnUI)
+- ✅ Modular architecture with separate files
+- ✅ Dashboard with metrics
+- ✅ Reconnaissance with CSV/JSON export
+- ✅ Bulk Scan with WebSocket live progress
+- ✅ Scheduled Scans page
+- ✅ Reports with PDF download
+- ✅ AI Assistant + Terminal
+- ✅ Settings page
+
+## File Structure
+
+```
+/app/frontend/src/
+├── App.js                    # Main app (62KB, reduced from 119KB)
+├── context/
+│   └── AuthContext.jsx       # Auth provider
+├── components/
+│   └── layout/
+│       ├── Sidebar.jsx
+│       ├── Header.jsx
+│       ├── MainLayout.jsx
+│       └── index.js
+├── pages/
+│   ├── LoginPage.jsx
+│   └── RegisterPage.jsx
+└── lib/
+    └── api.js
+
+/app/backend/
+├── server.py                 # API endpoints + scheduler
+└── scanner.py                # Network scanner + Shodan
+```
+
+## API Endpoints
+
+### Export
+- GET /api/scans/{id}/export?format=csv - Export scan as CSV
+- GET /api/scans/{id}/export?format=json - Export scan as JSON
+
+### Reports
+- GET /api/reports/{id}/pdf - Download PDF report
 
 ## Implementation History
 - **v1.0** JWT auth, AI chat, mocked scans, dashboard, reports
@@ -34,128 +93,23 @@ AI-enhanced penetration testing platform synthesizing best elements from leading
 - **v1.3** Server split into routers, AI summariser, cancellation + orphan janitor
 - **v1.4** NVD CVE enrichment, scan presets, lifespan, AI summary metadata, DEFT/BackBox/Kodachi/Pentoo distros
 
-### v2.0 (Aug 2026) — AI Remediation + Terminal Autocomplete
-- ✅ **Finding-specific Claude remediation** — `POST /api/scans/{scan_id}/remediations/{finding_index}` validates scan ownership/completion, generates a structured defensive plan, and persists it under the immutable completed finding for cached reuse.
-- ✅ **DevOps-ready plans** — every plan includes priority, summary, 3-6 ordered implementation steps, optional safe commands, validation checks, rollback guidance, model, and generation timestamp.
-- ✅ **Remediation UI** — each vulnerability can generate, expand/collapse, and copy its plan as Markdown; cached plans render directly from scan results.
-- ✅ **Terminal Tab autocomplete** — command verbs, `fast|thorough|stealth` preset names, and current-user scan ID prefixes complete in place; repeated Tab cycles ambiguous command matches.
-- ✅ **Mobile navigation fix** — persistent desktop sidebar becomes an off-canvas mobile overlay, preserving the full content width without horizontal overflow.
-- ✅ **JWT configuration hardening** — removed the fallback JWT secret; backend now fails fast when `JWT_SECRET` is missing.
-- ✅ **AI integration update** — upgraded `emergentintegrations` from 0.1.0 to 0.2.0 to use the required streaming API.
-- ✅ Verification: backend 9/9 v2.0 tests passed, production frontend build passed, real Claude generation/cache passed, and Playwright confirmed remediation rendering, fresh scan-ID completion, presets, command cycling, and 390px mobile behavior.
+### P0 (Next)
+- Further frontend modularization (extract all pages)
+- MFA authentication
+- Email notifications on scan completion
 
-### v1.5 (Feb 2026)
-- ✅ **Self-healing nmap install**: lifespan startup hook `_ensure_nmap_installed()` runs `apt-get install -y nmap` if missing.
-- ✅ **Runtime nmap detection**: services now use `_nmap_available()` at call-time.
-- ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` for GitHub Code Scanning / GitLab SAST.
-- ✅ Frontend SARIF download button on each report card.
+### P1 (High)
+- Team collaboration features
+- Custom vulnerability database
+- Export multiple scans as single ZIP
 
-### v1.9 (Feb 2026) — Hands-free Terminal + Safer Scheduler Delete
-- ✅ **Terminal rewritten** as a real CLI over the async scan endpoints. Commands: `help`, `clear`, `whoami`, `scans`, `scan <target> [preset]`, `vuln <target> [preset]`, `netscan <cidr> [preset]`, `cancel <prefix>`, `summary <prefix>`, `xml <prefix>`, `ai <query>`. Includes ArrowUp/ArrowDown history recall, auto-scroll, scan_id prefix resolution, streaming progress lines, and direct blob download for XML.
-- ✅ **Scheduler delete confirmation** — clicking delete now opens a Radix AlertDialog (`data-testid='delete-schedule-dialog'`) that shows the schedule name/cron/target before the destructive action.
-- ✅ 8/8 new terminal backend endpoint tests, 23/23 v17+v18 regression, full Playwright flow (scan lifecycle to completion + AlertDialog cancel/confirm).
+### P2 (Medium)
+- Dark web monitoring
+- Compliance framework mapping
+- Mobile-responsive improvements
 
-### v1.8 (Feb 2026) — Cron-style scan scheduler + non-blocking startup
-- ✅ **Scheduler CRUD** — `POST/GET/PATCH/DELETE /api/schedules` with 5-field cron validation via `croniter`, per-user isolation, invalid cron/scan_type → 400.
-- ✅ **Background dispatcher** — `services/scheduler.py` runs a 20-second asyncio tick loop that fires `enqueue_scheduled_scan()` for any enabled schedule whose `next_run_at <= now`, advances the cron cursor, and stamps `last_run_at` + `last_scan_id`. Fault-tolerant: bad schedules disable themselves instead of hot-looping.
-- ✅ **Frontend `/scheduler`** — new page with cron templates (15min/hourly/6h/daily/weekly), scan-type + preset selectors, pause/resume switch, delete, next/last-run timestamps, and links back to the scan pages.
-- ✅ **Non-blocking startup** — `_ensure_nmap_installed()` now runs under `await asyncio.to_thread(...)` so the event loop is not blocked during the (~15s) apt install on cold containers.
-- ✅ 12/12 new pytest tests including a live 60-90s dispatch verification; 21/22 regression pass (only the stale v1.5.0 version assertion, now bumped to 1.8.0).
-
-### v1.7 (Feb 2026) — Raw nmap XML evidence export
-- ✅ **`GET /api/scans/{id}/nmap-xml`** streams the raw nmap XML stored at `scan.results.nmap_xml` as `application/xml` with `Content-Disposition: attachment; filename="pentestai-scan-{scan_id}.xml"`.
-- ✅ **Download XML button** on `ReconPage`, `VulnerabilitiesPage`, `NetworkPage` (`data-testid="download-nmap-xml-button"`) — appears only when scan is completed AND `results.nmap_xml` is present.
-- ✅ Verified: 11/11 pytest tests + 3/3 playwright pages (auth, cross-user 404, unauth 401 all covered).
-
-### v1.6 (Feb 2026) — One-click "Launch in distro"
-- ✅ **`GET /api/distros/{id}/launch?target=&scan_id=`** returns a self-contained bash script for BackBox / Pentoo / DEFT / Kodachi pre-loaded with `PENTESTAI_TARGET` env var.
-   - BackBox & Pentoo → Docker workflows (`docker run backbox/backbox:latest`, `gentoo/stage3:latest`)
-   - DEFT → informational (ISO download + `dd` command — evidence work requires live media)
-   - Kodachi → informational (ISO + qemu-system + Tor/proxychains commands — anti-forensic, live-only)
-- ✅ **CR/LF & control-char sanitisation** — `_sanitize()` strips CR/LF/tabs and non-printable chars before shell-quoting; verified injection-safe (attempted `evil.com\ntouch /tmp/PWNED\n#` payload is squashed into an inert single-quoted string).
-- ✅ **Launch buttons** in ToolkitsPage (per distro card) and DistroRecommendation (per recommended distro on scan results, passes `target` + `scan_id` from the completed scan).
-- ✅ **Self-healing nmap install**: lifespan startup hook `_ensure_nmap_installed()` runs `apt-get install -y nmap` if missing (≤2s noop / ~15s install). Container can now be rebuilt without manual intervention.
-- ✅ **Runtime nmap detection**: services now call `_nmap_available()` at scan-execute time instead of module-import time, so newly-installed nmap is picked up without a reload.
-- ✅ **SARIF 2.1 export**: `GET /api/scans/{id}/sarif` and `GET /api/reports/{id}/sarif` produce SARIF 2.1.0 JSON consumable by GitHub Code Scanning, GitLab SAST, Azure DevOps. Includes proper severity mapping (critical/high→error, medium→warning, low→note, info→none), CVSS-numeric `security-severity`, rule deduplication, and aggregated multi-scan runs for reports.
-- ✅ **Frontend SARIF download**: button on each report card next to PDF, downloads `pentestai-report-{id}.sarif`.
-
-## Technical Architecture
-```
-/app/
-├── backend/
-│   ├── server.py             # ~80 line app composition + lifespan + nmap self-heal (v1.5.0)
-│   ├── core/
-│   │   ├── db.py
-│   │   ├── security.py
-│   │   └── models.py
-│   ├── routers/
-│   │   ├── auth.py
-│   │   ├── scans.py          # + cancel + summary + presets + sarif
-│   │   ├── reports.py        # + sarif
-│   │   ├── chat.py
-│   │   ├── dashboard.py
-│   │   └── distros.py
-│   ├── services/
-│   │   ├── nmap_service.py        # runtime _nmap_available()
-│   │   ├── vuln_service.py        # runtime _nmap_available()
-│   │   ├── network_service.py     # runtime _nmap_available()
-│   │   ├── shodan_service.py
-│   │   ├── report_service.py
-│   │   ├── mfa_service.py
-│   │   ├── presets.py
-│   │   ├── nvd_service.py
-│   │   ├── remediation_service.py # Claude structured remediation generation
-│   │   ├── distros.py
-│   │   └── sarif_service.py       # NEW: SARIF 2.1 builder
-│   ├── tests/                # 6 pytest files (backend_test, scans_v12, v13, v14_features, v14_distros, v15_features)
-│   └── .env
-├── frontend/src/
-│   ├── App.js
-│   ├── contexts/AuthContext.js
-│   ├── hooks/useScanPolling.js
-│   ├── components/
-│   │   ├── layout/{Sidebar,Header,MainLayout}.js
-│   │   ├── routes/ProtectedRoute.js
-│   │   ├── settings/MFASettings.js
-│   │   └── scans/{ScanProgress,AIScanSummary,PresetSelector,DistroRecommendation}.js
-│   └── pages/{Login,Register,Dashboard,Recon,Vulnerabilities,Network,Assistant,Terminal,Reports,Settings,Toolkits}Page.js
-│   └── lib/terminalAutocomplete.js and components/scans/AIRemediation.js
-└── memory/{PRD.md,test_credentials.md}
-```
-
-## Key API Endpoints
-- Auth: `POST /api/auth/register|login|login/mfa`, `GET /api/auth/me|mfa/status`, MFA setup/enable/disable
-- Scans: `POST /api/scans` (queued async), `GET /api/scans|{id}`, `POST /api/scans/{id}/cancel|summary`, **`POST /api/scans/{id}/remediations/{finding_index}`**, `GET /api/scans/presets`, **`GET /api/scans/{id}/sarif`**
-- Shodan: `POST /api/shodan/lookup`, `GET /api/shodan/status`
-- Reports: `POST /api/reports/generate`, `GET /api/reports|{id}/pdf|{id}/sarif`
-- Chat: `POST /api/chat`, `GET /api/chat/history`
-- Dashboard: `GET /api/dashboard/stats|vulnerability-trends`
-- Distros: `GET /api/distros|{id}|recommend/{scan_type}`
-
-## Container Constraints
-- nmap now self-installs at startup via lifespan hook — no manual intervention needed
-- No CAP_NET_RAW → uses `-sT` (TCP connect) and `-PS` discovery
-- Single uvicorn worker — `_active_tasks` dict is per-process
-
-## Prioritized Backlog
-
-### P1 (High Priority)
-- Email/Slack alerts on critical findings (auto-deliver AI summary + PDF/SARIF)
-- Persistent cross-session Terminal command history
-
-### P2 (Medium Priority)
-- Team collaboration & shared workspaces
-- Custom vulnerability database / private CVE feed
-- Per-distro tool launcher (SSH into distro VM)
-- Webhook on scan completion for external orchestration
-
-### P3 (Nice to Have)
-- Mobile responsive polish
-- Dark web monitoring integration
-- Compliance mapping (PCI-DSS, NIST, expand OWASP)
-- Distro release tracker
-
-## Next Tasks
-1. Email/Slack alerts (P1)
-2. Persistent Terminal history (P1)
-3. Webhook on scan completion (P2)
+## Key Files
+- `/app/frontend/src/App.js` - Main React app (modular imports)
+- `/app/backend/server.py` - All API endpoints
+- `/app/backend/scanner.py` - Network scanner + Shodan
+- `/app/memory/test_credentials.md` - Test credentials
