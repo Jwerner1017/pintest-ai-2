@@ -90,3 +90,7 @@ android-sdk/ -e
 credentials.json
 *.key
 .credentials
+
+# Committed env templates (names only)
+!.env.example
+!**/.env.example
