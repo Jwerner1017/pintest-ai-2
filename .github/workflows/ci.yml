@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend boots (FastAPI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # emergentintegrations is served from Emergent's private index, not PyPI.
+      # It is only imported lazily (LLM calls), so the boot check skips it.
+      - name: Install backend dependencies
+        run: |
+          grep -v '^emergentintegrations' backend/requirements.txt > /tmp/requirements-ci.txt
+          python -m pip install --upgrade pip
+          pip install -r /tmp/requirements-ci.txt
+
+      - name: Compile
+        run: python -m compileall -q backend
+
+      # Imports server.py and checks the API routes are mounted. Needs no
+      # database or secrets (the test sets dummy JWT_SECRET / MONGO_URL).
+      - name: Boot test
+        run: python -m pytest -q backend/tests/test_app_boots.py
+
+  # TODO: add a frontend job (`cd frontend && yarn install && CI=true yarn build`)
+  # once the build passes; today it fails on main with
+  # "'LoginPage' is not exported from './pages/LoginPage'" (LoginPage.js and
+  # LoginPage.jsx both exist and the .js one wins).
